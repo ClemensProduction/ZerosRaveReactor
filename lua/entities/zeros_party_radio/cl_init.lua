@@ -150,6 +150,9 @@ function ENT:PlaySound(url)
     self.BeatHistory = {}
     self.CalibrationEndTime = CurTime() + 5  -- 5-second calibration period
 
+    -- Reset vocal tracker for new song calibration
+    self.VocalTracker = nil
+
     -- Start playing the new song
     sound.PlayURL(url, "3d noblock", function(channel, errID, errName)
         if not IsValid(channel) then

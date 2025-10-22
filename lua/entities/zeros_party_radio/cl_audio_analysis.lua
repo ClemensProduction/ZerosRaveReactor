@@ -389,64 +389,185 @@ end
 -- ============================================
 
 --[[
-    Detect vocal onsets in the mid-frequency range
-    Vocals typically have rapid energy changes and sit in 1-4kHz
-    @return boolean, number: Whether vocal detected, intensity
+    Detect vocal presence and intensity in the audio
+    Returns a continuous 0-1 value representing how much vocal content is present
+    - 0.0 = Pure instrumental (no vocals)
+    - 1.0 = Pure vocals (a cappella)
+    - 0.5 = Mixed (vocals with instrumental)
+    @return boolean, number: Whether vocals detected, intensity (0-1)
 ]]
 function ENT:DetectVocalOnset()
     local currentTime = CurTime()
 
-    -- Initialize vocal history if needed
-    if not self.VocalHistory then
-        self.VocalHistory = {}
-        self.LastVocalTime = 0
-        self.VocalEnergySmooth = 0
+    -- Initialize vocal tracker if needed
+    if not self.VocalTracker then
+        self.VocalTracker = {
+            -- Energy tracking
+            vocalEnergyHistory = {},
+            bassEnergyHistory = {},
+            trebleEnergyHistory = {},
+
+            -- Smoothed values
+            vocalEnergySmooth = 0,
+            vocalPresenceSmooth = 0,
+
+            -- Detection state
+            lastVocalTime = 0,
+            calibrationSamples = 0,
+
+            -- Calibration stats
+            maxVocalEnergy = 0.01,
+            maxBassEnergy = 0.01,
+            avgVocalRatio = 0.5,
+        }
     end
 
-    -- Shorter cooldown for rapid vocal changes
-    if currentTime - self.LastVocalTime < 0.1 then
+    local tracker = self.VocalTracker
+
+    if not self.FFTData or #self.FFTData == 0 then
         return false, 0
     end
 
-    -- Get mid-range frequencies where vocals live
-    local band = self.FrequencyBands["Mid"]
-    if not band or not self.FFTData then return false, 0 end
+    -- Get frequency bands
+    local vocalBand = self.FrequencyBands["Mid"]      -- 500Hz-2kHz (primary vocal range)
+    local highMidBand = self.FrequencyBands["HighMid"] -- 2kHz-4kHz (vocal harmonics)
+    local bassBand = self.FrequencyBands["Bass"]       -- Bass/instrumental
+    local subBassBand = self.FrequencyBands["SubBass"] -- Deep bass/kick drums
 
-    -- Calculate energy in vocal range
+    if not vocalBand or not bassBand then return false, 0 end
+
+    -- Calculate energy in vocal frequencies (300Hz-4kHz)
     local vocalEnergy = 0
-    local startIdx = math.max(1, band[1])
-    local endIdx = math.min(band[2], #self.FFTData)
+    local vocalCount = 0
 
+    -- Primary vocal range (Mid)
+    local startIdx = math.max(1, vocalBand[1])
+    local endIdx = math.min(vocalBand[2], #self.FFTData)
     for i = startIdx, endIdx do
         vocalEnergy = vocalEnergy + (self.FFTData[i] or 0)
-    end
-    vocalEnergy = vocalEnergy / (endIdx - startIdx + 1)
-
-    -- Smooth the energy to reduce noise
-    self.VocalEnergySmooth = Lerp(0.3, self.VocalEnergySmooth, vocalEnergy)
-
-    -- Store history
-    table.insert(self.VocalHistory, vocalEnergy)
-    if #self.VocalHistory > 30 then
-        table.remove(self.VocalHistory, 1)
+        vocalCount = vocalCount + 1
     end
 
-    -- Calculate average and deviation
-    local avgEnergy = 0
-    for _, e in ipairs(self.VocalHistory) do
-        avgEnergy = avgEnergy + e
-    end
-    avgEnergy = avgEnergy / #self.VocalHistory
-
-    -- Detect onset when energy spikes above average
-    local threshold = avgEnergy * 1.3
-    if vocalEnergy > threshold and vocalEnergy > 0.2 then
-        self.LastVocalTime = currentTime
-        local intensity = math.min(1, (vocalEnergy - threshold) / threshold)
-        return true, intensity
+    -- Vocal harmonics range (HighMid) - weighted slightly less
+    if highMidBand then
+        startIdx = math.max(1, highMidBand[1])
+        endIdx = math.min(highMidBand[2], #self.FFTData)
+        for i = startIdx, endIdx do
+            vocalEnergy = vocalEnergy + (self.FFTData[i] or 0) * 0.7
+            vocalCount = vocalCount + 0.7
+        end
     end
 
-    return false, 0
+    vocalEnergy = vocalCount > 0 and (vocalEnergy / vocalCount) or 0
+
+    -- Calculate energy in bass/instrumental frequencies
+    local instrumentalEnergy = 0
+    local instrumentalCount = 0
+
+    -- Sub-bass (kicks, deep bass)
+    if subBassBand then
+        startIdx = math.max(1, subBassBand[1])
+        endIdx = math.min(subBassBand[2], #self.FFTData)
+        for i = startIdx, endIdx do
+            instrumentalEnergy = instrumentalEnergy + (self.FFTData[i] or 0)
+            instrumentalCount = instrumentalCount + 1
+        end
+    end
+
+    -- Bass range
+    startIdx = math.max(1, bassBand[1])
+    endIdx = math.min(bassBand[2], #self.FFTData)
+    for i = startIdx, endIdx do
+        instrumentalEnergy = instrumentalEnergy + (self.FFTData[i] or 0)
+        instrumentalCount = instrumentalCount + 1
+    end
+
+    instrumentalEnergy = instrumentalCount > 0 and (instrumentalEnergy / instrumentalCount) or 0
+
+    -- Store in history for adaptive thresholds
+    table.insert(tracker.vocalEnergyHistory, vocalEnergy)
+    table.insert(tracker.bassEnergyHistory, instrumentalEnergy)
+
+    if #tracker.vocalEnergyHistory > 100 then
+        table.remove(tracker.vocalEnergyHistory, 1)
+    end
+    if #tracker.bassEnergyHistory > 100 then
+        table.remove(tracker.bassEnergyHistory, 1)
+    end
+
+    -- Calibration phase: learn the song's characteristics
+    tracker.calibrationSamples = tracker.calibrationSamples + 1
+
+    if tracker.calibrationSamples < 50 then
+        -- Still calibrating, update max values
+        tracker.maxVocalEnergy = math.max(tracker.maxVocalEnergy, vocalEnergy)
+        tracker.maxBassEnergy = math.max(tracker.maxBassEnergy, instrumentalEnergy)
+
+        -- Don't return a value during early calibration
+        self.VocalEnergySmooth = 0
+        return false, 0
+    end
+
+    -- Calculate adaptive max values (with decay)
+    tracker.maxVocalEnergy = math.max(tracker.maxVocalEnergy * 0.995, vocalEnergy)
+    tracker.maxBassEnergy = math.max(tracker.maxBassEnergy * 0.995, instrumentalEnergy)
+
+    -- Normalize energies
+    local normalizedVocal = tracker.maxVocalEnergy > 0.001 and (vocalEnergy / tracker.maxVocalEnergy) or 0
+    local normalizedBass = tracker.maxBassEnergy > 0.001 and (instrumentalEnergy / tracker.maxBassEnergy) or 0
+
+    -- Calculate vocal presence using multiple methods
+    local vocalPresence = 0
+
+    -- Method 1: Energy ratio (vocal energy vs bass energy)
+    local totalEnergy = normalizedVocal + normalizedBass + 0.001
+    local energyRatio = normalizedVocal / totalEnergy
+
+    -- Method 2: Absolute vocal energy (catches a cappella sections)
+    local absoluteVocal = normalizedVocal
+
+    -- Method 3: Spectral balance (vocals create a "dip" in bass when present)
+    local spectralBalance = normalizedVocal > normalizedBass and 1 or (normalizedVocal / (normalizedBass + 0.001))
+    spectralBalance = math.Clamp(spectralBalance, 0, 1)
+
+    -- Combine methods with weights
+    vocalPresence = (energyRatio * 0.4) + (absoluteVocal * 0.4) + (spectralBalance * 0.2)
+    vocalPresence = math.Clamp(vocalPresence, 0, 1)
+
+    -- Apply smoothing to reduce jitter
+    tracker.vocalEnergySmooth = Lerp(0.15, tracker.vocalEnergySmooth, vocalEnergy)
+    tracker.vocalPresenceSmooth = Lerp(0.2, tracker.vocalPresenceSmooth, vocalPresence)
+
+    -- Store for external access
+    self.VocalEnergySmooth = tracker.vocalPresenceSmooth
+
+    -- Detect vocal onset (for triggering effects)
+    local isOnset = false
+    local onsetIntensity = 0
+
+    if currentTime - tracker.lastVocalTime > 0.1 then
+        -- Calculate recent average
+        local recentAvg = 0
+        local recentCount = 0
+        local historySize = #tracker.vocalEnergyHistory
+
+        for i = math.max(1, historySize - 20), historySize do
+            recentAvg = recentAvg + (tracker.vocalEnergyHistory[i] or 0)
+            recentCount = recentCount + 1
+        end
+        recentAvg = recentCount > 0 and (recentAvg / recentCount) or 0
+
+        -- Onset when energy suddenly increases above recent average
+        local onsetThreshold = recentAvg * 1.4
+        if vocalEnergy > onsetThreshold and vocalEnergy > 0.15 and tracker.vocalPresenceSmooth > 0.3 then
+            isOnset = true
+            onsetIntensity = math.min(1, (vocalEnergy - onsetThreshold) / (onsetThreshold + 0.001))
+            tracker.lastVocalTime = currentTime
+        end
+    end
+
+    -- Return onset detection (for backwards compatibility) and smoothed vocal presence
+    return isOnset, tracker.vocalPresenceSmooth
 end
 
 --[[
