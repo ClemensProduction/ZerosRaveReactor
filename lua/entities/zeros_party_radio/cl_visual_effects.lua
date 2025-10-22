@@ -90,7 +90,7 @@ local function DrawShader(ent, mat, col, offset)
     ent:DisableMatrix("RenderMultiply")
 
     -- Restore original model
-    ent:SetModel("models/spg/gryffindor/lamp.mdl")
+    ent:SetModel(util.IsValidModel("models/spg/gryffindor/lamp.mdl") and "models/spg/gryffindor/lamp.mdl" or "models/props_lab/citizenradio.mdl")
 end
 
 -- ============================================
@@ -499,6 +499,7 @@ end
 function ENT:OnVolumeUpdate(intensity)
     if intensity <= 0.01 then return end
 
+	/*
     -- Create dynamic light
     local dlight = DynamicLight(self:EntIndex())
     if dlight then
@@ -511,6 +512,7 @@ function ENT:OnVolumeUpdate(intensity)
         dlight.size = 4000 * self.fft_scale
         dlight.dietime = CurTime() + 1
     end
+	*/
 
     -- Trigger epic shader time
     if self:IsEpic(7) then
@@ -533,15 +535,15 @@ function ENT:OnVolumeUpdate(intensity)
     if self:IsEpic(2) then
         if not self.HoloModelChange or CurTime() > self.HoloModelChange then
             local option = not self.HoloLastOption
-            self.HoloModel = self.ModelList[math.random(#self.ModelList)]
+			local mdl = self.ModelList[math.random(#self.ModelList)]
+
+            self.HoloModel = util.IsValidModel(mdl) and mdl or "models/dog.mdl"
             self.HoloLastOption = option
             self.HoloModelChange = CurTime() + 10
             self.EpicShaderTime = CurTime() + 10
             self.FlipRotationDir = option
         end
     end
-
-	if not self.HoloModel then self.HoloModel = self.ModelList[math.random(#self.ModelList)] end
 
     -- Render hologram model
     if self.HoloModel then
@@ -604,7 +606,7 @@ function ENT:OnVolumeUpdate(intensity)
         self:DisableMatrix("RenderMultiply")
 
         -- Restore original model
-        self:SetModel("models/spg/gryffindor/lamp.mdl")
+        self:SetModel(util.IsValidModel("models/spg/gryffindor/lamp.mdl") and "models/spg/gryffindor/lamp.mdl" or "models/props_lab/citizenradio.mdl")
         self:SetRenderOrigin(self:LocalToWorld(Vector(0, 0, 0)))
         self:SetRenderAngles(self:LocalToWorldAngles(Angle(0, 0, 0)))
     end
@@ -724,15 +726,15 @@ end
 ]]
 function ENT:DrawDynamicLighting()
     if not self.Config.Effects.EnableLighting then return end
-
+	if not self.PartyCenter then return end
     local dlight = DynamicLight(self:EntIndex())
     if dlight then
-        dlight.pos = self:GetPos() + ( self:GetUp() * (self:GetModelScale() * 30) )
+        dlight.pos = LerpVector(0.5,self:GetPos(),self.PartyCenter)
         dlight.r = self.CurrentColor.r
         dlight.g = self.CurrentColor.g
         dlight.b = self.CurrentColor.b
-        dlight.brightness = math.Clamp(2 + self.VisualIntensity * 3, 0, 5)
-        dlight.size = math.Clamp(256 + self.BassIntensity * 1024, 100, 2048)
+        dlight.brightness = 10 * self.SmoothVocalEnergyIntensity
+        dlight.size = math.Clamp(4000 * self.VocalEnergySmooth, 100, 4000)
         dlight.decay = 1000
         dlight.dietime = CurTime() + 0.1
 	end

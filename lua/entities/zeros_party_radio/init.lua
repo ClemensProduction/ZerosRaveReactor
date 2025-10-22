@@ -1,6 +1,9 @@
 AddCSLuaFile("cl_init.lua")
 AddCSLuaFile("cl_menu.lua")
 
+AddCSLuaFile("cl_audio_analysis.lua")
+AddCSLuaFile("cl_visual_effects.lua")
+
 AddCSLuaFile("shared.lua")
 include("shared.lua")
 
@@ -43,7 +46,7 @@ function ENT:SpawnFunction(ply, tr, name)
 end
 
 function ENT:Initialize()
-    self:SetModel("models/spg/gryffindor/lamp.mdl")
+    self:SetModel(util.IsValidModel("models/spg/gryffindor/lamp.mdl") and "models/spg/gryffindor/lamp.mdl" or "models/props_lab/citizenradio.mdl")
     self:SetModelScale(2)
 
     self:PhysicsInit(SOLID_VPHYSICS)

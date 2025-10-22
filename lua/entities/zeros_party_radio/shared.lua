@@ -20,10 +20,6 @@ PrecacheParticleSystem("zpc2_cake_explosion_pink")
 PrecacheParticleSystem("zpc2_cake_explosion_cyan")
 PrecacheParticleSystem("zpc2_cake_explosion_violett")
 
-game.AddParticles("particles/zld_speaker.pcf")
-PrecacheParticleSystem("zld_speaker_beat01")
-PrecacheParticleSystem("zld_speaker_beat02")
-
 game.AddParticles("particles/radio_speaker_effects.pcf")
 PrecacheParticleSystem("radio_speaker_beat01")
 

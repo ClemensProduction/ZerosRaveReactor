@@ -284,17 +284,17 @@ function ENT:DrawTranslucent()
     self.LocalViewAng = Angle(90, LocalPlayer():EyeAngles().y - 90, 90)
 
     -- Draw effects based on LOD
-    if self.LODLevel < 2 then
+    if self.LODLevel < 1 then
         self:DrawDynamicLighting()
+
+		-- Draw advanced detection visuals
+		self:DrawVocalRipples()
+		self:DrawGrooveWaves()
+		self:DrawTransitionEffects()
     end
 
 	if self.LODLevel == 0 then
         self:DrawFrequencyBars()
-
-        -- Draw advanced detection visuals
-        self:DrawVocalRipples()
-        self:DrawGrooveWaves()
-        self:DrawTransitionEffects()
     end
 
 	if LocalPlayer():IsSuperAdmin() then
