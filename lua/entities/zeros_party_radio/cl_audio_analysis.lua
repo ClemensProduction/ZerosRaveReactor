@@ -439,8 +439,12 @@ function ENT:DetectVocalOnset()
     avgEnergy = avgEnergy / #self.VocalHistory
 
     -- Detect onset when energy spikes above average
-    local threshold = avgEnergy * 1.3
-    if vocalEnergy > threshold and vocalEnergy > 0.2 then
+    local threshold = avgEnergy * 1.4
+	print(" ")
+	print("vocalEnergy: ",tostring(vocalEnergy))
+	print("threshold: ",tostring(threshold))
+	print(" ")
+    if vocalEnergy > threshold and vocalEnergy > 0.5 then
         self.LastVocalTime = currentTime
         local intensity = math.min(1, (vocalEnergy - threshold) / threshold)
         return true, intensity
