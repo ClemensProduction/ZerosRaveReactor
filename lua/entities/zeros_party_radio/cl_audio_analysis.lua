@@ -543,7 +543,6 @@ function ENT:DetectVocalOnset()
 
     -- Detect vocal onset (for triggering effects)
     local isOnset = false
-    local onsetIntensity = 0
 
     if currentTime - tracker.lastVocalTime > 0.1 then
         -- Calculate recent average
@@ -561,7 +560,6 @@ function ENT:DetectVocalOnset()
         local onsetThreshold = recentAvg * 1.4
         if vocalEnergy > onsetThreshold and vocalEnergy > 0.15 and tracker.vocalPresenceSmooth > 0.3 then
             isOnset = true
-            onsetIntensity = math.min(1, (vocalEnergy - onsetThreshold) / (onsetThreshold + 0.001))
             tracker.lastVocalTime = currentTime
         end
     end
