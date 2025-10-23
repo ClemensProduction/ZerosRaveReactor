@@ -148,7 +148,7 @@ function ENT:PlaySound(url)
     self.CurrentMaxEnergy = 0.01
     self.FluxHistory = {Kick = {}, Snare = {}, HiHat = {}, Clap = {}}
     self.BeatHistory = {}
-    self.CalibrationEndTime = CurTime() + 0.1  -- 10-second calibration period
+    self.CalibrationEndTime = CurTime() + 5  -- 5-second calibration period
 
     -- Reset vocal tracker for new song calibration
     self.VocalTracker = nil
