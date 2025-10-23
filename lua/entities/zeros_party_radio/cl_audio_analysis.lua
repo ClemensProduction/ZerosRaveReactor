@@ -29,6 +29,9 @@ end
     Recalculate frequency bands based on actual audio sample rate
     This ensures we're analyzing the correct frequency ranges regardless of audio quality
 
+    IMPORTANT: This function maps frequencies to the GROUPED BANDS, not raw FFT bins!
+    The FFT data is grouped into Config.FFT.Bands (64) bands for processing.
+
     Called when audio starts playing or sample rate changes
 ]]
 function ENT:RecalculateFrequencyBands()
@@ -50,30 +53,42 @@ function ENT:RecalculateFrequencyBands()
 
     self.AudioSampleRate = sampleRate
 
-    -- Calculate FFT bin width
-    -- Nyquist frequency is half the sample rate (maximum representable frequency)
+    -- Calculate GROUPED band width
+    -- CRITICAL: FFT data is grouped into Config.FFT.Bands (64) bands in AnalyzeFFT()
+    -- So we need to map frequencies to these grouped bands, NOT raw FFT bins!
     local nyquist = sampleRate / 2
-    -- Each FFT bin represents (nyquist / number of bins) Hz
-    self.FFTBinWidth = nyquist / (self.Config.FFT.Size / 2)
+    local groupedBandWidth = nyquist / self.Config.FFT.Bands  -- Hz per grouped band
 
-    -- Helper function to convert frequency (Hz) to FFT bin index
-    local function FreqToBin(freq)
-        return math.max(1, math.min(self.Config.FFT.Bands, math.floor(freq / self.FFTBinWidth)))
+    -- Helper function to convert frequency (Hz) to GROUPED band index
+    -- Returns which of the 64 grouped bands contains this frequency
+    local function FreqToBand(freq)
+        local band = math.floor(freq / groupedBandWidth) + 1  -- +1 because Lua is 1-indexed
+        return math.max(1, math.min(self.Config.FFT.Bands, band))
     end
 
     -- Recalculate all frequency bands based on actual sample rate
-    -- This ensures accurate detection regardless of audio quality
+    -- These map to the GROUPED bands (1-64), ensuring NO OVERLAP between beat types
     self.FrequencyBands = {
-        SubBass = {FreqToBin(20), FreqToBin(60)},      -- 20-60 Hz: Deep bass, felt more than heard
-        Bass = {FreqToBin(60), FreqToBin(250)},        -- 60-250 Hz: Bass drums, bass guitar
-        LowMid = {FreqToBin(250), FreqToBin(500)},     -- 250-500 Hz: Low mids
-        Mid = {FreqToBin(500), FreqToBin(2000)},       -- 500-2000 Hz: Snare, vocals, guitars
-        HighMid = {FreqToBin(2000), FreqToBin(4000)},  -- 2000-4000 Hz: Claps, high vocals
-        High = {FreqToBin(4000), FreqToBin(8000)},     -- 4000-8000 Hz: Hi-hats, cymbals
-        VeryHigh = {FreqToBin(8000), FreqToBin(16000)} -- 8000-16000 Hz: Air, shimmer
+        SubBass = {FreqToBand(20), FreqToBand(80)},        -- 20-80 Hz: Sub-bass, kick fundamentals
+        Bass = {FreqToBand(80), FreqToBand(250)},          -- 80-250 Hz: Bass drum body, bass guitar
+        LowMid = {FreqToBand(250), FreqToBand(500)},       -- 250-500 Hz: Low mids
+        Mid = {FreqToBand(500), FreqToBand(2000)},         -- 500-2000 Hz: Snare, vocals, guitars
+        HighMid = {FreqToBand(2000), FreqToBand(4000)},    -- 2000-4000 Hz: Claps, high vocals
+        High = {FreqToBand(4000), FreqToBand(8000)},       -- 4000-8000 Hz: Hi-hats, cymbals
+        VeryHigh = {FreqToBand(8000), FreqToBand(16000)}   -- 8000-16000 Hz: Air, shimmer
     }
 
-    print("[Audio Analysis] Initialized with sample rate: " .. sampleRate .. " Hz, bin width: " .. math.floor(self.FFTBinWidth) .. " Hz")
+    -- Log the actual band mappings for debugging
+    print("[Audio Analysis] Sample rate: " .. sampleRate .. " Hz")
+    print("[Audio Analysis] Grouped band width: " .. math.floor(groupedBandWidth) .. " Hz")
+    print("[Audio Analysis] SubBass bands: " .. self.FrequencyBands.SubBass[1] .. "-" .. self.FrequencyBands.SubBass[2] ..
+          " (" .. (self.FrequencyBands.SubBass[1]-1)*groupedBandWidth .. "-" .. self.FrequencyBands.SubBass[2]*groupedBandWidth .. " Hz)")
+    print("[Audio Analysis] Bass bands: " .. self.FrequencyBands.Bass[1] .. "-" .. self.FrequencyBands.Bass[2] ..
+          " (" .. (self.FrequencyBands.Bass[1]-1)*groupedBandWidth .. "-" .. self.FrequencyBands.Bass[2]*groupedBandWidth .. " Hz)")
+    print("[Audio Analysis] Mid bands: " .. self.FrequencyBands.Mid[1] .. "-" .. self.FrequencyBands.Mid[2] ..
+          " (" .. (self.FrequencyBands.Mid[1]-1)*groupedBandWidth .. "-" .. self.FrequencyBands.Mid[2]*groupedBandWidth .. " Hz)")
+    print("[Audio Analysis] High bands: " .. self.FrequencyBands.High[1] .. "-" .. self.FrequencyBands.High[2] ..
+          " (" .. (self.FrequencyBands.High[1]-1)*groupedBandWidth .. "-" .. self.FrequencyBands.High[2]*groupedBandWidth .. " Hz)")
 end
 
 -- ============================================
@@ -294,53 +309,57 @@ end
 function ENT:DetectBeatsAdvanced()
     -- ===== EXISTING BEAT DETECTION =====
 
-	-- KICK DRUM DETECTION (low frequency, 20-60 Hz)
-	-- Typically the strongest beat element in most music
-	local kickDetected, kickIntensity = self:DetectFrequencyBeat(
-	    "SubBass",  -- Frequency range to analyze
-	    "Kick",     -- Beat type identifier
-	    1.0,        -- Threshold multiplier (sensitive for deep bass)
-	    0.1         -- Cooldown time (seconds) between detections
-	)
-	if kickDetected then
-	    self:OnBeatDetected(kickIntensity, "Kick")
-	end
+    -- KICK DRUM DETECTION (low frequency, 20-80 Hz)
+    -- Typically the strongest beat element in most music
+    -- Uses SubBass range for the fundamental frequency of the kick
+    local kickDetected, kickIntensity = self:DetectFrequencyBeat(
+        "SubBass",  -- Frequency range to analyze (20-80 Hz)
+        "Kick",     -- Beat type identifier
+        0.9,        -- Threshold multiplier (slightly more sensitive since kicks are important)
+        0.15        -- Cooldown time (seconds) - prevents double-trigger on same kick
+    )
+    if kickDetected then
+        self:OnBeatDetected(kickIntensity, "Kick")
+    end
 
-	-- SNARE DRUM DETECTION (mid frequency, 500-2000 Hz)
-	-- Usually on beats 2 and 4 in most music
-	local snareDetected, snareIntensity = self:DetectFrequencyBeat(
-	    "Mid",
-	    "Snare",
-	    1.2,        -- Slightly higher threshold to avoid bass bleed
-	    0.1
-	)
-	if snareDetected then
-	    self:OnBeatDetected(snareIntensity, "Snare")
-	end
+    -- SNARE DRUM DETECTION (mid frequency, 500-2000 Hz)
+    -- Usually on beats 2 and 4 in most music
+    -- Snares have energy in the mid-range (body) and high-range (crack)
+    local snareDetected, snareIntensity = self:DetectFrequencyBeat(
+        "Mid",      -- Frequency range (500-2000 Hz)
+        "Snare",    -- Beat type identifier
+        1.1,        -- Threshold multiplier (slightly less sensitive - snares can be subtle)
+        0.15        -- Cooldown time
+    )
+    if snareDetected then
+        self:OnBeatDetected(snareIntensity, "Snare")
+    end
 
-	-- HI-HAT DETECTION (high frequency, 4000-8000 Hz)
-	-- Rapid rhythmic element, often every 8th or 16th note
-	local hihatDetected, hihatIntensity = self:DetectFrequencyBeat(
-	    "High",
-	    "HiHat",
-	    1.5,        -- Higher threshold for noisy highs
-	    0.1
-	)
-	if hihatDetected then
-	    self:OnBeatDetected(hihatIntensity, "HiHat")
-	end
+    -- HI-HAT DETECTION (high frequency, 4000-8000 Hz)
+    -- Rapid rhythmic element, often every 8th or 16th note
+    -- Hi-hats are very high frequency with fast attacks
+    local hihatDetected, hihatIntensity = self:DetectFrequencyBeat(
+        "High",     -- Frequency range (4000-8000 Hz)
+        "HiHat",    -- Beat type identifier
+        1.2,        -- Threshold multiplier (less sensitive - hi-hats are quieter and more frequent)
+        0.08        -- Shorter cooldown (hi-hats can be very fast)
+    )
+    if hihatDetected then
+        self:OnBeatDetected(hihatIntensity, "HiHat")
+    end
 
-	-- CLAP/PERCUSSION DETECTION (high-mid frequency, 2000-4000 Hz)
-	-- Hand claps, snaps, and other percussive elements
-	local clapDetected, clapIntensity = self:DetectFrequencyBeat(
-	    "HighMid",
-	    "Clap",
-	    1.3,        -- Medium-high threshold
-	    0.1
-	)
-	if clapDetected then
-	    self:OnBeatDetected(clapIntensity, "Clap")
-	end
+    -- CLAP/PERCUSSION DETECTION (high-mid frequency, 2000-4000 Hz)
+    -- Hand claps, snaps, and other percussive elements
+    -- Claps have a distinctive mid-high frequency signature
+    local clapDetected, clapIntensity = self:DetectFrequencyBeat(
+        "HighMid",  -- Frequency range (2000-4000 Hz)
+        "Clap",     -- Beat type identifier
+        1.1,        -- Threshold multiplier (moderate sensitivity)
+        0.15        -- Cooldown time
+    )
+    if clapDetected then
+        self:OnBeatDetected(clapIntensity, "Clap")
+    end
 
     -- ===== NEW ADVANCED DETECTION =====
 
@@ -382,7 +401,7 @@ end
 
     @param frequencyRange: Key from FrequencyBands table (e.g., "Bass", "Mid")
     @param beatType: Type of beat identifier (e.g., "Kick", "Snare")
-    @param threshold: Detection threshold multiplier (higher = less sensitive)
+    @param threshold: Detection threshold multiplier (higher = less sensitive, 1.0 = default)
     @param cooldown: Minimum time in SECONDS between detections (prevents double-triggers)
     @return boolean, number: Whether beat detected, intensity (0-1)
 ]]
@@ -409,6 +428,11 @@ function ENT:DetectFrequencyBeat(frequencyRange, beatType, threshold, cooldown)
 
     local startIdx = math.max(1, band[1])
     local endIdx = math.min(band[2], #self.FFTData)
+
+    -- Check if this band is valid (not overlapping with wrong range)
+    if startIdx > endIdx or startIdx > #self.FFTData then
+        return false, 0
+    end
 
     for i = startIdx, endIdx do
         local curr = self.FFTData[i] or 0
@@ -440,6 +464,11 @@ function ENT:DetectFrequencyBeat(frequencyRange, beatType, threshold, cooldown)
     end
     self.FluxHistory[beatType] = bandHistory
 
+    -- Need enough calibration data before detecting
+    if #bandHistory < 20 then
+        return false, 0
+    end
+
     -- Compute adaptive statistics per band
     -- Mean, variance, and median help us set dynamic thresholds
     local avgFlux = 0
@@ -459,10 +488,41 @@ function ENT:DetectFrequencyBeat(frequencyRange, beatType, threshold, cooldown)
     end
     local stdDev = math.sqrt(variance)
 
-    -- Fully automatic threshold: Mean + scaled standard deviation + median offset
-    -- This adapts to each song's characteristics automatically
-    local fluxThreshold = (avgFlux + (stdDev * 0.5)) + (medianFlux * 0.05)
-    local energyThreshold = 0.2  -- Minimum energy to prevent false positives on silence
+    -- Adaptive threshold with USER-PROVIDED threshold multiplier
+    -- FIXED: Now actually uses the threshold parameter!
+    -- threshold = 1.0 (default), higher = less sensitive, lower = more sensitive
+    local baseThreshold = (avgFlux + (stdDev * 0.8)) + (medianFlux * 0.1)
+    local fluxThreshold = baseThreshold * threshold
+
+    -- Frequency-specific energy thresholds (different instruments have different loudness)
+    -- Kick drums are usually loudest, hi-hats are quieter
+    local energyThreshold = 0.15  -- Base threshold
+    if beatType == "Kick" then
+        energyThreshold = 0.25  -- Kicks should be strong
+    elseif beatType == "Snare" then
+        energyThreshold = 0.20  -- Snares are loud but not as loud as kicks
+    elseif beatType == "HiHat" then
+        energyThreshold = 0.10  -- Hi-hats are quieter
+    elseif beatType == "Clap" then
+        energyThreshold = 0.15  -- Claps moderate
+    end
+
+    -- CRITICAL: Prevent multiple beat types from triggering on the exact same frame
+    -- This happens when a strong transient (like a kick) causes energy across all frequencies
+    -- Only allow ONE beat type per frame by checking if ANY beat was just detected
+    local lastAnyBeat = 0
+    for _, time in pairs(self.LastBeatTimes) do
+        lastAnyBeat = math.max(lastAnyBeat, time)
+    end
+
+    -- If ANY beat was detected within 0.02 seconds (20ms), require MUCH higher threshold
+    -- This prevents cascading detections from the same transient
+    local frameLockTime = 0.02
+    if lastAnyBeat > 0 and (currentTime - lastAnyBeat) < frameLockTime then
+        -- Another beat just fired, so this one needs to be MUCH stronger to also fire
+        fluxThreshold = fluxThreshold * 2.0  -- 2x threshold during lock period
+        energyThreshold = energyThreshold * 1.5  -- 1.5x energy requirement
+    end
 
     -- Beat detected if both flux and energy exceed thresholds
     if flux > fluxThreshold and energy > energyThreshold then
