@@ -174,6 +174,10 @@ function ENT:PlaySound(url)
         channel:SetVolume(self.Volume)
         channel:Play()
 
+        -- Recalculate frequency bands based on actual audio sample rate
+        -- This ensures accurate detection regardless of audio source quality
+        self:RecalculateFrequencyBands()
+
         local length = channel:GetLength()
         if length > 0 then
             timer.Create("PartyRadio_NextSong_" .. self:EntIndex(), length, 1, function()
