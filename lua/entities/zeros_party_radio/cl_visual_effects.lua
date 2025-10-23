@@ -842,7 +842,7 @@ end
 function ENT:DrawDebugInfo()
 	local scale = 0.5
 	local sw,sh = ScrW(),ScrH()
-	local w,h = 600 * scale,1010 * scale
+	local w,h = 600 * scale,1090 * scale
 	local gap = 10 * scale
 	local x,y = sw - w - gap, gap * 2 + 300 * scale
 
@@ -883,6 +883,8 @@ function ENT:DrawDebugInfo()
 
 		-- Debug information lines
 		local debugLines = {
+			{"Song Name", tostring(self.CurrentSong.name or "nil")},
+			{"AudioSampleRate", string.format(deci, self.AudioSampleRate or 0)},
 			{"Visual Intensity", string.format(deci, self.VisualIntensity or 0)},
 			{"Bass Intensity", string.format(deci, self.BassIntensity or 0)},
 			{"Treble Intensity", string.format(deci, self.TrebleIntensity or 0)},

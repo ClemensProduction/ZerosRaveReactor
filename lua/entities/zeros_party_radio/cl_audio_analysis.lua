@@ -294,53 +294,53 @@ end
 function ENT:DetectBeatsAdvanced()
     -- ===== EXISTING BEAT DETECTION =====
 
-    -- KICK DRUM DETECTION (low frequency, 60-250 Hz)
-    -- Typically the strongest beat element in most music
-    local kickDetected, kickIntensity = self:DetectFrequencyBeat(
-        "SubBass",  -- Frequency range to analyze
-        "Kick",     -- Beat type identifier
-        1.0,        -- Threshold multiplier
-        0.1         -- Cooldown time (seconds) between detections
-    )
-    if kickDetected then
-        self:OnBeatDetected(kickIntensity, "Kick")
-    end
+	-- KICK DRUM DETECTION (low frequency, 20-60 Hz)
+	-- Typically the strongest beat element in most music
+	local kickDetected, kickIntensity = self:DetectFrequencyBeat(
+	    "SubBass",  -- Frequency range to analyze
+	    "Kick",     -- Beat type identifier
+	    1.0,        -- Threshold multiplier (sensitive for deep bass)
+	    0.1         -- Cooldown time (seconds) between detections
+	)
+	if kickDetected then
+	    self:OnBeatDetected(kickIntensity, "Kick")
+	end
 
-    -- SNARE DRUM DETECTION (mid frequency, 500-2000 Hz)
-    -- Usually on beats 2 and 4 in most music
-    local snareDetected, snareIntensity = self:DetectFrequencyBeat(
-        "Mid",
-        "Snare",
-        1.0,
-        0.1
-    )
-    if snareDetected then
-        self:OnBeatDetected(snareIntensity, "Snare")
-    end
+	-- SNARE DRUM DETECTION (mid frequency, 500-2000 Hz)
+	-- Usually on beats 2 and 4 in most music
+	local snareDetected, snareIntensity = self:DetectFrequencyBeat(
+	    "Mid",
+	    "Snare",
+	    1.2,        -- Slightly higher threshold to avoid bass bleed
+	    0.1
+	)
+	if snareDetected then
+	    self:OnBeatDetected(snareIntensity, "Snare")
+	end
 
-    -- HI-HAT DETECTION (high frequency, 4000-8000 Hz)
-    -- Rapid rhythmic element, often every 8th or 16th note
-    local hihatDetected, hihatIntensity = self:DetectFrequencyBeat(
-        "High",
-        "HiHat",
-        1.0,
-        0.1
-    )
-    if hihatDetected then
-        self:OnBeatDetected(hihatIntensity, "HiHat")
-    end
+	-- HI-HAT DETECTION (high frequency, 4000-8000 Hz)
+	-- Rapid rhythmic element, often every 8th or 16th note
+	local hihatDetected, hihatIntensity = self:DetectFrequencyBeat(
+	    "High",
+	    "HiHat",
+	    1.5,        -- Higher threshold for noisy highs
+	    0.1
+	)
+	if hihatDetected then
+	    self:OnBeatDetected(hihatIntensity, "HiHat")
+	end
 
-    -- CLAP/PERCUSSION DETECTION (high-mid frequency, 2000-4000 Hz)
-    -- Hand claps, snaps, and other percussive elements
-    local clapDetected, clapIntensity = self:DetectFrequencyBeat(
-        "HighMid",
-        "Clap",
-        1.0,
-        0.1
-    )
-    if clapDetected then
-        self:OnBeatDetected(clapIntensity, "Clap")
-    end
+	-- CLAP/PERCUSSION DETECTION (high-mid frequency, 2000-4000 Hz)
+	-- Hand claps, snaps, and other percussive elements
+	local clapDetected, clapIntensity = self:DetectFrequencyBeat(
+	    "HighMid",
+	    "Clap",
+	    1.3,        -- Medium-high threshold
+	    0.1
+	)
+	if clapDetected then
+	    self:OnBeatDetected(clapIntensity, "Clap")
+	end
 
     -- ===== NEW ADVANCED DETECTION =====
 
@@ -375,6 +375,116 @@ function ENT:DetectBeatsAdvanced()
         end
     end
 end
+
+--[[
+    Detect beats in a specific frequency range
+    Uses adaptive thresholding based on recent history to handle different song styles
+
+    @param frequencyRange: Key from FrequencyBands table (e.g., "Bass", "Mid")
+    @param beatType: Type of beat identifier (e.g., "Kick", "Snare")
+    @param threshold: Detection threshold multiplier (higher = less sensitive)
+    @param cooldown: Minimum time in SECONDS between detections (prevents double-triggers)
+    @return boolean, number: Whether beat detected, intensity (0-1)
+]]
+/*
+function ENT:DetectFrequencyBeat(frequencyRange, beatType, threshold, cooldown)
+    local currentTime = CurTime()
+
+    -- Check cooldown to prevent detecting the same beat multiple times
+    -- This is TIME-BASED (seconds), not frame-based, so works at any FPS
+    if self.LastBeatTimes[beatType] and (currentTime - self.LastBeatTimes[beatType] < cooldown) then
+        return false, 0
+    end
+
+    -- Get frequency band for this beat type
+    local band = self.FrequencyBands[frequencyRange]
+    if not band or not self.FFTData or not self.PrevFFTData then
+        return false, 0
+    end
+
+    -- Calculate spectral flux for this specific frequency range
+    -- Flux = positive change in energy (indicates onset/transient)
+    local flux = 0
+    local energy = 0
+
+    local startIdx = math.max(1, band[1])
+    local endIdx = math.min(band[2], #self.FFTData)
+
+    for i = startIdx, endIdx do
+        local curr = self.FFTData[i] or 0
+        local prev = self.PrevFFTData[i] or 0
+        local diff = curr - prev
+
+        -- Accumulate positive changes (onsets)
+        if diff > 0 then
+            flux = flux + diff
+        end
+
+        -- Also track total energy in this band
+        energy = energy + curr
+    end
+
+    -- Normalize by band size to handle different band widths
+    local bandSize = endIdx - startIdx + 1
+    if bandSize > 0 then
+        flux = flux / bandSize
+        energy = energy / bandSize
+    end
+
+    -- Per-band flux history for automatic adaptive thresholding
+    -- Each beat type learns its own characteristics
+    local bandHistory = self.FluxHistory[beatType] or {}
+    table.insert(bandHistory, flux)
+    if #bandHistory > self.FluxHistorySize then
+        table.remove(bandHistory, 1)
+    end
+    self.FluxHistory[beatType] = bandHistory
+
+    -- Compute adaptive statistics per band
+    -- Mean, variance, and median help us set dynamic thresholds
+    local avgFlux = 0
+    local variance = 0
+    local sorted = table.Copy(bandHistory)
+    table.sort(sorted)
+    local medianFlux = (#sorted > 0) and sorted[math.floor(#sorted / 2) + 1] or 0.001
+
+    if #bandHistory > 0 then
+        for _, f in ipairs(bandHistory) do avgFlux = avgFlux + f end
+        avgFlux = avgFlux / #bandHistory
+
+        for _, f in ipairs(bandHistory) do variance = variance + (f - avgFlux) ^ 2 end
+        variance = variance / #bandHistory
+    else
+        avgFlux = 0.001
+    end
+    local stdDev = math.sqrt(variance)
+
+    -- Fully automatic threshold: Mean + scaled standard deviation + median offset
+    -- This adapts to each song's characteristics automatically
+    local fluxThreshold = (avgFlux + (stdDev * 0.5)) + (medianFlux * 0.05)
+    local energyThreshold = 0.2  -- Minimum energy to prevent false positives on silence
+
+    -- Beat detected if both flux and energy exceed thresholds
+    if flux > fluxThreshold and energy > energyThreshold then
+
+        self.LastBeatTimes[beatType] = currentTime
+
+        -- Add to beat history for tempo calculation
+        table.insert(self.BeatHistory, currentTime)
+        if #self.BeatHistory > 20 then
+            table.remove(self.BeatHistory, 1)
+        end
+
+        -- Calculate intensity based on how much we exceeded the threshold
+        -- Higher intensity = stronger beat
+        local intensity = math.min(1, flux / (fluxThreshold + 1e-6))
+
+        return true, intensity
+    end
+
+    return false, 0
+end
+*/
 
 --[[
     Detect beats in a specific frequency range
@@ -460,9 +570,15 @@ function ENT:DetectFrequencyBeat(frequencyRange, beatType, threshold, cooldown)
 
     -- Fully automatic threshold: Mean + scaled standard deviation + median offset
     -- This adapts to each song's characteristics automatically
-    local fluxThreshold = (avgFlux + (stdDev * 0.5)) + (medianFlux * 0.05)
+    -- FIXED: Apply the threshold multiplier here for per-type sensitivity tuning
+    local fluxThreshold = threshold * ((avgFlux + (stdDev * 0.5)) + (medianFlux * 0.05))
     local energyThreshold = 0.2  -- Minimum energy to prevent false positives on silence
 
+	print("flux: ",flux)
+	print("fluxThreshold: ",fluxThreshold)
+	print("energy: ",energy)
+	print("energyThreshold: ",energyThreshold)
+	print(" ")
     -- Beat detected if both flux and energy exceed thresholds
     if flux > fluxThreshold and energy > energyThreshold then
 
@@ -808,7 +924,7 @@ function ENT:DetectVocalOnset()
             recentAvgVocal = (#recentVocalEnergy - 2 * trim > 0) and (sum / (#recentVocalEnergy - 2 * trim)) or 0.01
         end
 
-        local onsetThreshold = recentAvgVocal * (0.9 + (tracker.vocalBaselineAvg * 0.1))
+        local onsetThreshold = recentAvgVocal * (1.1 + (tracker.vocalBaselineAvg * 0.1))
 
         -- Calculate vocal-specific flux (change in vocal frequencies only)
         local vocalFlux = 0
@@ -836,6 +952,16 @@ function ENT:DetectVocalOnset()
         local check_flux = vocalFlux > 0.01                         -- Positive change
         local check_bass = bassCorrelation < 0.5                    -- Not correlated with bass
 
+		/*
+		print("check_energy",check_energy)
+		print("check_presence",check_presence)
+		print("check_flat",check_flat)
+		print("check_harmonic",check_harmonic)
+		print("check_flux",check_flux)
+		print("check_bass",check_bass)
+		*/
+
+
         local check_result = check_energy and check_presence and check_flat and check_harmonic and check_flux and check_bass
 
         if check_result then
@@ -844,7 +970,7 @@ function ENT:DetectVocalOnset()
             local sustainCount = 0
             local checkFrames = math.min(5, #tracker.vocalEnergyHistory)
             for i = #tracker.vocalEnergyHistory - checkFrames + 1, #tracker.vocalEnergyHistory do
-                if tracker.vocalEnergyHistory[i] and tracker.vocalEnergyHistory[i].value > onsetThreshold * 0.8 then
+                if tracker.vocalEnergyHistory[i] and tracker.vocalEnergyHistory[i].value > onsetThreshold * 0.7 then
                     sustainCount = sustainCount + 1
                 end
             end
