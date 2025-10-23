@@ -128,9 +128,9 @@ function ENT:AnalyzeFFT()
     if CurTime() < self.CalibrationEndTime then return end
 
     -- Trigger updates after calibration
-    self:OnBassUpdate(self.BassIntensity)
-    self:OnTrebleUpdate(self.TrebleIntensity)
-    self:OnVolumeUpdate(self.VisualIntensity)
+    --self:OnBassUpdate(self.BassIntensity)
+    --self:OnTrebleUpdate(self.TrebleIntensity)
+    --self:OnVolumeUpdate(self.VisualIntensity)
     self:DetectBeatsAdvanced()
     self:UpdateVisualColor()
 end
@@ -266,11 +266,12 @@ function ENT:DetectBeatsAdvanced()
         -- print("Vocal Onset Detected:", vocalIntensity)
     end
 
+
     -- BASSLINE GROOVE DETECTION
     local grooveDetected, grooveConfidence, grooveType = self:DetectBasslineGroove()
     if grooveDetected then
         self:OnBasslineGrooveDetected(grooveConfidence, grooveType)
-        -- print("Bassline Groove:", grooveType, "Confidence:", grooveConfidence)
+        print("Bassline Groove:", grooveType, "Confidence:", grooveConfidence)
     end
 
     -- BUILD-UP/DROP DETECTION
@@ -389,36 +390,45 @@ end
 -- ============================================
 
 --[[
-    Detect vocal presence and intensity in the audio
-    Returns a continuous 0-1 value representing how much vocal content is present
-    - 0.0 = Pure instrumental (no vocals)
-    - 1.0 = Pure vocals (a cappella)
-    - 0.5 = Mixed (vocals with instrumental)
-    @return boolean, number: Whether vocals detected, intensity (0-1)
+    Detect vocal presence and onsets with broader coverage for 90% of songs
+    - Broadened bands: Formants 1-12 (0-4130Hz) for low/high fundamentals (male bass to soprano)
+    - Harmonics 13-20 (4130-6880Hz), sibilance 21-30 (6880-10320Hz), presence/air 31-40 (10320-13760Hz) for breath/highs
+    - Added vocal-specific flux to catch onsets without bass confusion
+    - Enhanced features: Harmonic ratio (peaks vs noise), rolloff proxy via high-band energy
+    - Adaptive: Calibration learns song's mid-range baseline, rejects synth false positives via tonality+consistency
+    - Onset: Requires vocal flux + sustained presence + low bass correlation
+    @return boolean, number: Onset detected, smoothed presence (0-1)
 ]]
 function ENT:DetectVocalOnset()
     local currentTime = CurTime()
 
-    -- Initialize vocal tracker if needed
+    -- Initialize tracker if needed
     if not self.VocalTracker then
         self.VocalTracker = {
-            -- Energy tracking
+            -- Energy histories
             vocalEnergyHistory = {},
-            bassEnergyHistory = {},
-            trebleEnergyHistory = {},
+            instrumentalEnergyHistory = {},
+            centroidHistory = {},
+            flatnessHistory = {},
+            harmonicRatioHistory = {},  -- New: For harmonic structure
 
             -- Smoothed values
-            vocalEnergySmooth = 0,
             vocalPresenceSmooth = 0,
+            vocalEnergySmooth = 0,
+            centroidSmooth = 0,
+            flatnessSmooth = 0,
+            harmonicRatioSmooth = 0,
+
+            -- Baselines (adaptive max/avg)
+            vocalBaselineMax = 0.01,
+            vocalBaselineAvg = 0.01,
+            instrumentalBaselineMax = 0.01,
+            instrumentalBaselineAvg = 0.01,
 
             -- Detection state
             lastVocalTime = 0,
             calibrationSamples = 0,
-
-            -- Calibration stats
-            maxVocalEnergy = 0.01,
-            maxBassEnergy = 0.01,
-            avgVocalRatio = 0.5,
+            historySize = 120,  -- ~3-4 seconds
         }
     end
 
@@ -428,147 +438,274 @@ function ENT:DetectVocalOnset()
         return false, 0
     end
 
-    -- Get frequency bands
-    local vocalBand = self.FrequencyBands["Mid"]      -- 500Hz-2kHz (primary vocal range)
-    local highMidBand = self.FrequencyBands["HighMid"] -- 2kHz-4kHz (vocal harmonics)
-    local bassBand = self.FrequencyBands["Bass"]       -- Bass/instrumental
-    local subBassBand = self.FrequencyBands["SubBass"] -- Deep bass/kick drums
+    -- Broadened bands for wider voice coverage (~344Hz/bin)
+    local formantBand = {1, 12}    -- 0-4130Hz: Covers bass (75Hz) to soprano (1100Hz) fundamentals + formants
+    local harmonicBand = {13, 20}  -- 4130-6880Hz: Harmonics for most genres
+    local sibilanceBand = {21, 30} -- 6880-10320Hz: Sibilants/consonants
+    local presenceBand = {31, 40}  -- 10320-13760Hz: Air/breath for natural vocals
+    local bassBand = self.FrequencyBands["Bass"] or {1, 3}       -- Low instruments
+    local subBassBand = self.FrequencyBands["SubBass"] or {1, 1} -- Deep bass
 
-    if not vocalBand or not bassBand then return false, 0 end
-
-    -- Calculate energy in vocal frequencies (300Hz-4kHz)
+    -- Calculate weighted vocal energy (higher weight on formants, include presence)
     local vocalEnergy = 0
     local vocalCount = 0
+    local fftSum = 0  -- For features
+    local fftGeo = 1
+    local fftBins = 0
+    local peakCount = 0  -- For harmonic ratio (simple peak detector)
+    local noiseEnergy = 0
 
-    -- Primary vocal range (Mid)
-    local startIdx = math.max(1, vocalBand[1])
-    local endIdx = math.min(vocalBand[2], #self.FFTData)
+    -- Formants (high weight)
+    local startIdx = math.max(1, formantBand[1])
+    local endIdx = math.min(formantBand[2], #self.FFTData)
     for i = startIdx, endIdx do
-        vocalEnergy = vocalEnergy + (self.FFTData[i] or 0)
-        vocalCount = vocalCount + 1
-    end
-
-    -- Vocal harmonics range (HighMid) - weighted slightly less
-    if highMidBand then
-        startIdx = math.max(1, highMidBand[1])
-        endIdx = math.min(highMidBand[2], #self.FFTData)
-        for i = startIdx, endIdx do
-            vocalEnergy = vocalEnergy + (self.FFTData[i] or 0) * 0.7
-            vocalCount = vocalCount + 0.7
+        local val = self.FFTData[i] or 0
+        vocalEnergy = vocalEnergy + val * 1.0
+        vocalCount = vocalCount + 1.0
+        fftSum = fftSum + val
+        fftGeo = fftGeo * (val + 1e-6)
+        fftBins = fftBins + 1
+        if i > 1 and i < #self.FFTData and val > (self.FFTData[i-1] or 0) and val > (self.FFTData[i+1] or 0) then
+            peakCount = peakCount + 1
+        else
+            noiseEnergy = noiseEnergy + val
         end
     end
+
+    -- Harmonics (medium weight)
+    startIdx = math.max(1, harmonicBand[1])
+    endIdx = math.min(harmonicBand[2], #self.FFTData)
+    for i = startIdx, endIdx do
+        local val = self.FFTData[i] or 0
+        vocalEnergy = vocalEnergy + val * 0.7
+        vocalCount = vocalCount + 0.7
+        fftSum = fftSum + val
+        fftGeo = fftGeo * (val + 1e-6)
+        fftBins = fftBins + 1
+        if i > 1 and i < #self.FFTData and val > (self.FFTData[i-1] or 0) and val > (self.FFTData[i+1] or 0) then
+            peakCount = peakCount + 1
+        else
+            noiseEnergy = noiseEnergy + val
+        end
+    end
+
+    -- Sibilance (low weight)
+    startIdx = math.max(1, sibilanceBand[1])
+    endIdx = math.min(sibilanceBand[2], #self.FFTData)
+    local sibilanceEnergy = 0
+    local sibilanceCount = 0
+    for i = startIdx, endIdx do
+        local val = self.FFTData[i] or 0
+        sibilanceEnergy = sibilanceEnergy + val
+        sibilanceCount = sibilanceCount + 1
+        fftSum = fftSum + val
+        fftGeo = fftGeo * (val + 1e-6)
+        fftBins = fftBins + 1
+        if i > 1 and i < #self.FFTData and val > (self.FFTData[i-1] or 0) and val > (self.FFTData[i+1] or 0) then
+            peakCount = peakCount + 1
+        else
+            noiseEnergy = noiseEnergy + val
+        end
+    end
+    sibilanceEnergy = sibilanceCount > 0 and (sibilanceEnergy / sibilanceCount) or 0
+
+    -- Presence/air (boost for natural vocals, low weight)
+    startIdx = math.max(1, presenceBand[1])
+    endIdx = math.min(presenceBand[2], #self.FFTData)
+    local presenceEnergy = 0
+    local presenceCount = 0
+    for i = startIdx, endIdx do
+        local val = self.FFTData[i] or 0
+        presenceEnergy = presenceEnergy + val
+        presenceCount = presenceCount + 1
+        fftSum = fftSum + val
+        fftGeo = fftGeo * (val + 1e-6)
+        fftBins = fftBins + 1
+    end
+    presenceEnergy = presenceCount > 0 and (presenceEnergy / presenceCount) or 0
 
     vocalEnergy = vocalCount > 0 and (vocalEnergy / vocalCount) or 0
 
-    -- Calculate energy in bass/instrumental frequencies
+    -- Instrumental energy
     local instrumentalEnergy = 0
     local instrumentalCount = 0
-
-    -- Sub-bass (kicks, deep bass)
-    if subBassBand then
-        startIdx = math.max(1, subBassBand[1])
-        endIdx = math.min(subBassBand[2], #self.FFTData)
-        for i = startIdx, endIdx do
-            instrumentalEnergy = instrumentalEnergy + (self.FFTData[i] or 0)
-            instrumentalCount = instrumentalCount + 1
-        end
+    startIdx = math.max(1, subBassBand[1])
+    endIdx = math.min(subBassBand[2], #self.FFTData)
+    for i = startIdx, endIdx do
+        local val = self.FFTData[i] or 0
+        instrumentalEnergy = instrumentalEnergy + val
+        instrumentalCount = instrumentalCount + 1
     end
-
-    -- Bass range
     startIdx = math.max(1, bassBand[1])
     endIdx = math.min(bassBand[2], #self.FFTData)
     for i = startIdx, endIdx do
-        instrumentalEnergy = instrumentalEnergy + (self.FFTData[i] or 0)
+        local val = self.FFTData[i] or 0
+        instrumentalEnergy = instrumentalEnergy + val
         instrumentalCount = instrumentalCount + 1
     end
-
     instrumentalEnergy = instrumentalCount > 0 and (instrumentalEnergy / instrumentalCount) or 0
 
-    -- Store in history for adaptive thresholds
+    -- Spectral features
+    local spectralCentroid = 0
+    if fftSum > 0 then
+        local weightedSum = 0
+        for i = 1, #self.FFTData do
+            weightedSum = weightedSum + (self.FFTData[i] or 0) * i
+        end
+        spectralCentroid = weightedSum / fftSum  -- Higher for vocals
+    end
+
+    local spectralFlatness = 0
+    if fftBins > 0 then
+        local arithMean = fftSum / fftBins
+        local geoMean = (fftGeo ^ (1 / fftBins))
+        spectralFlatness = geoMean / (arithMean + 1e-6)  -- Lower for tonal vocals
+    end
+
+    -- New: Simple harmonic ratio (peaks vs noise, higher for voiced sounds)
+    local harmonicRatio = (peakCount > 0 and fftBins > 0) and (peakCount / fftBins) * (fftSum / (noiseEnergy + 1e-6)) or 0
+    harmonicRatio = math.Clamp(harmonicRatio, 0, 1)
+
+    -- Store histories
     table.insert(tracker.vocalEnergyHistory, vocalEnergy)
-    table.insert(tracker.bassEnergyHistory, instrumentalEnergy)
+    table.insert(tracker.instrumentalEnergyHistory, instrumentalEnergy)
+    table.insert(tracker.centroidHistory, spectralCentroid)
+    table.insert(tracker.flatnessHistory, spectralFlatness)
+    table.insert(tracker.harmonicRatioHistory, harmonicRatio)
 
-    if #tracker.vocalEnergyHistory > 100 then
+    if #tracker.vocalEnergyHistory > tracker.historySize then
         table.remove(tracker.vocalEnergyHistory, 1)
-    end
-    if #tracker.bassEnergyHistory > 100 then
-        table.remove(tracker.bassEnergyHistory, 1)
+        table.remove(tracker.instrumentalEnergyHistory, 1)
+        table.remove(tracker.centroidHistory, 1)
+        table.remove(tracker.flatnessHistory, 1)
+        table.remove(tracker.harmonicRatioHistory, 1)
     end
 
-    -- Calibration phase: learn the song's characteristics
+    -- Calibration (extend to 100 samples for better song adaptation)
     tracker.calibrationSamples = tracker.calibrationSamples + 1
-
-    if tracker.calibrationSamples < 50 then
-        -- Still calibrating, update max values
-        tracker.maxVocalEnergy = math.max(tracker.maxVocalEnergy, vocalEnergy)
-        tracker.maxBassEnergy = math.max(tracker.maxBassEnergy, instrumentalEnergy)
-
-        -- Don't return a value during early calibration
-        self.VocalEnergySmooth = 0
+    if tracker.calibrationSamples < 100 then
         return false, 0
     end
 
-    -- Calculate adaptive max values (with decay)
-    tracker.maxVocalEnergy = math.max(tracker.maxVocalEnergy * 0.995, vocalEnergy)
-    tracker.maxBassEnergy = math.max(tracker.maxBassEnergy * 0.995, instrumentalEnergy)
+    -- Update max baselines with slower decay
+    tracker.vocalBaselineMax = math.max(tracker.vocalBaselineMax * 0.995, vocalEnergy)
+    tracker.instrumentalBaselineMax = math.max(tracker.instrumentalBaselineMax * 0.995, instrumentalEnergy)
 
-    -- Normalize energies
-    local normalizedVocal = tracker.maxVocalEnergy > 0.001 and (vocalEnergy / tracker.maxVocalEnergy) or 0
-    local normalizedBass = tracker.maxBassEnergy > 0.001 and (instrumentalEnergy / tracker.maxBassEnergy) or 0
+    -- Trimmed avg for robustness
+    local function getTrimmedAvg(history)
+        local sorted = table.Copy(history)
+        table.sort(sorted)
+        local trim = math.floor(#sorted * 0.1)
+        local sum = 0
+        for i = trim + 1, #sorted - trim do
+            sum = sum + sorted[i]
+        end
+        return (#sorted - 2 * trim > 0) and (sum / (#sorted - 2 * trim)) or 0.01
+    end
 
-    -- Calculate vocal presence using multiple methods
-    local vocalPresence = 0
+    tracker.vocalBaselineAvg = getTrimmedAvg(tracker.vocalEnergyHistory)
+    tracker.instrumentalBaselineAvg = getTrimmedAvg(tracker.instrumentalEnergyHistory)
 
-    -- Method 1: Energy ratio (vocal energy vs bass energy)
-    local totalEnergy = normalizedVocal + normalizedBass + 0.001
-    local energyRatio = normalizedVocal / totalEnergy
+    -- Normalize
+    local normVocal = tracker.vocalBaselineMax > 0.001 and (vocalEnergy / tracker.vocalBaselineMax) or 0
+    local normInstrumental = tracker.instrumentalBaselineMax > 0.001 and (instrumentalEnergy / tracker.instrumentalBaselineMax) or 0
+    local normCentroid = math.Clamp((spectralCentroid - 4) / 25, 0, 1)  -- Adjusted for broader bands (vocals ~4-30)
+    local normFlatness = 1 - math.Clamp(spectralFlatness, 0, 1)  -- High for tonal
+    local normSibilance = math.Clamp(sibilanceEnergy / (tracker.vocalBaselineAvg + 1e-6), 0, 1)
+    local normPresence = math.Clamp(presenceEnergy / (tracker.vocalBaselineAvg * 0.5 + 1e-6), 0, 1)  -- Lower expectation for highs
+    local normHarmonic = math.Clamp(harmonicRatio, 0, 1)
 
-    -- Method 2: Absolute vocal energy (catches a cappella sections)
-    local absoluteVocal = normalizedVocal
+    -- Vocal presence (weighted, added harmonic+presence for better distinction)
+    local energyRatio = normVocal / (normVocal + normInstrumental + 0.001)
+    local absoluteVocal = normVocal
+    local spectralBalance = (normVocal > normInstrumental * 0.7) and 1 or (normVocal / (normInstrumental + 0.001))  -- Loosened for quiet vocals
+    local tonalityBoost = normFlatness * 0.4 + normCentroid * 0.3 + normHarmonic * 0.3
+    local highFreqBoost = (normSibilance * 0.5 + normPresence * 0.5) > 0.25 and 0.2 or 0
 
-    -- Method 3: Spectral balance (vocals create a "dip" in bass when present)
-    local spectralBalance = normalizedVocal > normalizedBass and 1 or (normalizedVocal / (normalizedBass + 0.001))
-    spectralBalance = math.Clamp(spectralBalance, 0, 1)
-
-    -- Combine methods with weights
-    vocalPresence = (energyRatio * 0.4) + (absoluteVocal * 0.4) + (spectralBalance * 0.2)
+    local vocalPresence = (energyRatio * 0.25) + (absoluteVocal * 0.25) + (spectralBalance * 0.2) + (tonalityBoost * 0.2) + highFreqBoost
     vocalPresence = math.Clamp(vocalPresence, 0, 1)
 
-    -- Apply smoothing to reduce jitter
-    tracker.vocalEnergySmooth = Lerp(0.15, tracker.vocalEnergySmooth, vocalEnergy)
-    tracker.vocalPresenceSmooth = Lerp(0.2, tracker.vocalPresenceSmooth, vocalPresence)
+    -- Smoothing
+    tracker.vocalPresenceSmooth = Lerp(FrameTime() * 1.2, tracker.vocalPresenceSmooth, vocalPresence)  -- Slightly slower
+    tracker.vocalEnergySmooth = Lerp(FrameTime() * 4, tracker.vocalEnergySmooth, vocalEnergy)
+    tracker.centroidSmooth = Lerp(FrameTime() * 3, tracker.centroidSmooth, normCentroid)
+    tracker.flatnessSmooth = Lerp(FrameTime() * 3, tracker.flatnessSmooth, normFlatness)
+    tracker.harmonicRatioSmooth = Lerp(FrameTime() * 3, tracker.harmonicRatioSmooth, normHarmonic)
 
-    -- Store for external access
-    self.VocalEnergySmooth = tracker.vocalPresenceSmooth
+    -- Store
+    self.vocalPresenceSmooth = tracker.vocalPresenceSmooth
+    self.VocalEnergySmooth = tracker.vocalEnergySmooth
 
-    -- Detect vocal onset (for triggering effects)
+    -- Onset detection (add vocal-specific flux, check bass correlation)
     local isOnset = false
-    local onsetIntensity = 0
-
     if currentTime - tracker.lastVocalTime > 0.1 then
-        -- Calculate recent average
-        local recentAvg = 0
-        local recentCount = 0
-        local historySize = #tracker.vocalEnergyHistory
+        local recentAvgVocal = getTrimmedAvg({unpack(tracker.vocalEnergyHistory, #tracker.vocalEnergyHistory - 20)})
+        local onsetThreshold = recentAvgVocal * (0.9 + (tracker.vocalBaselineAvg * 0.1))  -- Loosened for variety
 
-        for i = math.max(1, historySize - 20), historySize do
-            recentAvg = recentAvg + (tracker.vocalEnergyHistory[i] or 0)
-            recentCount = recentCount + 1
+        -- Vocal flux (positive change in vocal bands only)
+        local vocalFlux = 0
+        if self.PrevFFTData then
+            for i = formantBand[1], presenceBand[2] do
+                local curr = self.FFTData[i] or 0
+                local prev = self.PrevFFTData[i] or 0
+                vocalFlux = vocalFlux + math.max(0, curr - prev)
+            end
+            vocalFlux = vocalFlux / (presenceBand[2] - formantBand[1] + 1)
         end
-        recentAvg = recentCount > 0 and (recentAvg / recentCount) or 0
 
-        -- Onset when energy suddenly increases above recent average
-        local onsetThreshold = recentAvg * 1.4
-        if vocalEnergy > onsetThreshold and vocalEnergy > 0.15 and tracker.vocalPresenceSmooth > 0.3 then
-            isOnset = true
-            onsetIntensity = math.min(1, (vocalEnergy - onsetThreshold) / (onsetThreshold + 0.001))
-            tracker.lastVocalTime = currentTime
+        -- Bass correlation (high if vocal spike matches bass)
+        local bassFlux = self:GetFrequencyIntensity("Bass") - (self.PrevFFTData and self:GetFrequencyIntensity("Bass") or 0)  -- Approx
+        local bassCorrelation = math.abs(bassFlux) > 0.15 and 1 or 0
+
+		local check_energy = vocalEnergy > onsetThreshold
+		local check_presence = vocalPresence > 0.3
+		local check_flat = tracker.flatnessSmooth > 0.25
+		local check_harmonic = tracker.harmonicRatioSmooth > 0.3
+		local check_flux = vocalFlux > 0.01
+		local check_bass = bassCorrelation < 0.5
+
+		/*
+		print("vocalEnergy",":",tostring(vocalEnergy))
+		print("onsetThreshold",":",tostring(onsetThreshold))
+		print("vocalPresence",":",tostring(vocalPresence))
+		print("flatnessSmooth",":",tostring(tracker.flatnessSmooth))
+		print("harmonicRatioSmooth",":",tostring(tracker.harmonicRatioSmooth))
+		print("vocalFlux",":",tostring(vocalFlux))
+		print("bassCorrelation",":",tostring(bassCorrelation))
+
+		print("-----")
+
+		print("check_energy",":",tostring(check_energy))
+		print("check_presence",":",tostring(check_presence))
+		print("check_flat",":",tostring(check_flat))
+		print("check_harmonic",":",tostring(check_harmonic))
+		print("check_flux",":",tostring(check_flux))
+		print("check_bass",":",tostring(check_bass))
+		*/
+
+		local check_result = check_energy and check_presence and check_flat and check_harmonic and check_flux and check_bass
+
+		-- Conditions: Energy spike, high presence/tonality/harmonic, good flux, low bass corr
+        if check_result then
+
+            -- Sustain check: 3/5 recent frames high
+            local sustainCount = 0
+            for i = #tracker.vocalEnergyHistory - 4, #tracker.vocalEnergyHistory do  -- Last 5
+                if tracker.vocalEnergyHistory[i] > onsetThreshold * 0.8 then
+                    sustainCount = sustainCount + 1
+                end
+            end
+
+            if sustainCount >= 3 then
+                isOnset = true
+                tracker.lastVocalTime = currentTime
+            end
         end
     end
 
-    -- Return onset detection (for backwards compatibility) and smoothed vocal presence
     return isOnset, tracker.vocalPresenceSmooth
 end
+
 
 --[[
     Detect consistent bassline patterns (not just kicks)
@@ -650,11 +787,15 @@ function ENT:DetectBasslineGroove()
     -- Low deviation means consistent pattern
     local consistency = 1 - math.min(1, deviation / avgInterval)
 
-    -- Determine pattern type based on tempo
-    local bpm = 60 / avgInterval
-    local patternType = "none"
-
     if consistency > 0.7 then
+
+		-- Determine pattern type based on tempo
+		-- TODO Different FPS can cause issues, always check what the clients fps is
+		local fps = 1 / FrameTime()
+		local bpm = fps / avgInterval-- 140 * self.BassIntensity --30 / avgInterval
+		print(bpm)
+		local patternType = "none"
+
         if bpm < 90 then
             patternType = "slow_groove"
         elseif bpm < 120 then

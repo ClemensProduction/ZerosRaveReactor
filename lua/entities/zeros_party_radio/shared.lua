@@ -134,7 +134,7 @@ ENT.Config = {
     Performance = {
         UpdateRate = 0.03,         -- How often to update visuals
         MaxParticles = 50,         -- Maximum particle effects
-        LODDistance = 2000         -- Distance for level of detail
+        LODDistance = 4000         -- Distance for level of detail
     }
 }
 

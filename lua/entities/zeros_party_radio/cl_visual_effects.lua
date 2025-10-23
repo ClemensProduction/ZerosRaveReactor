@@ -170,6 +170,7 @@ end
 ]]
 function ENT:OnBeatDrop(intensity, beatType)
 	if intensity < 0.9 then return end
+	if not self.PartyCenter then return end
 
 	if not self.BeatTracker then self.BeatTracker = {} end
 	self.BeatTracker[beatType] = intensity
@@ -202,6 +203,7 @@ end
     @param intensity: Vocal intensity (0-1)
 ]]
 function ENT:OnVocalDetected(intensity)
+	--print("OnVocalDetected: "..tostring(intensity))
     -- Create ripple effect at different height
     local pos = self:LocalToWorld(Vector(0,0,2))
 
@@ -416,7 +418,6 @@ function ENT:OnBassUpdate(intensity)
 
     local glow_col = Color(self.fft_col01.r, self.fft_col01.g, self.fft_col01.b, 50)
 
-
     -- Draw ground rings
 	cam.Start3D2D(self:LocalToWorld(Vector(0, 0, 2)), self:LocalToWorldAngles(Angle(0, 0, 0)), math.Clamp(self.fft_scale, 0.4, 50))
         -- Background glow
@@ -454,7 +455,6 @@ function ENT:OnTrebleUpdate(intensity)
 
 	local glow_col = Color(self.fft_col02.r, self.fft_col02.g, self.fft_col02.b, 50)
 	local dist = self:GetListenerDistance()
-
 
 	render.SetMaterial(laser)
 	render.DrawBeam(self:GetPos(), self.PartyCenter, 200, 0, 0, self.fft_col02)
@@ -726,15 +726,17 @@ end
 ]]
 function ENT:DrawDynamicLighting()
     if not self.Config.Effects.EnableLighting then return end
-	if not self.PartyCenter then return end
+	if not self.PartyCenter or not self.vocalEnergySmooth or not self.vocalPresenceSmooth then return end
+
     local dlight = DynamicLight(self:EntIndex())
     if dlight then
-        dlight.pos = LerpVector(0.5,self:GetPos(),self.PartyCenter)
+        dlight.pos = self.PartyCenter
         dlight.r = self.CurrentColor.r
         dlight.g = self.CurrentColor.g
         dlight.b = self.CurrentColor.b
-        dlight.brightness = 10 * self.SmoothVocalEnergyIntensity
-        dlight.size = math.Clamp(4000 * self.VocalEnergySmooth, 100, 4000)
+
+        dlight.brightness = (10 * self.vocalEnergySmooth)
+        dlight.size = math.Clamp(3000 * self.vocalPresenceSmooth, 100, 3000)
         dlight.decay = 1000
         dlight.dietime = CurTime() + 0.1
 	end

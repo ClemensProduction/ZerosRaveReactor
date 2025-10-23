@@ -148,7 +148,7 @@ function ENT:PlaySound(url)
     self.CurrentMaxEnergy = 0.01
     self.FluxHistory = {Kick = {}, Snare = {}, HiHat = {}, Clap = {}}
     self.BeatHistory = {}
-    self.CalibrationEndTime = CurTime() + 5  -- 5-second calibration period
+    self.CalibrationEndTime = CurTime() + 0.1  -- 10-second calibration period
 
     -- Reset vocal tracker for new song calibration
     self.VocalTracker = nil
@@ -219,9 +219,12 @@ function ENT:Think()
     end
 
 	self.SmoothIntensity = Lerp(FrameTime() * 0.5,self.SmoothIntensity or 0,self.VisualIntensity)
-	self.SmoothVocalEnergyIntensity = Lerp(FrameTime() * 0.5,self.SmoothVocalEnergyIntensity or 0,(self.VocalEnergySmooth or 0) * 2)
+	self.SmoothVocalEnergyIntensity = Lerp(FrameTime() * 0.5,self.SmoothVocalEnergyIntensity or 0,(self.VocalEnergySmooth or 0) * 4)
 
 	if self.VocalEnergySmooth and self.VocalEnergySmooth > 0 then
+
+		self.HeightIntensity = Lerp(FrameTime() * 0.5,self.HeightIntensity or 0,self.SmoothVocalEnergyIntensity > 0.5 and 2 or 0)
+
 		local sin = math.sin(CurTime())
 		local cos = math.cos(CurTime())
 
@@ -229,14 +232,14 @@ function ENT:Think()
 		local vocal = self.SmoothVocalEnergyIntensity
 
 		local BaseRad = 100
-		local SinRad = math.abs(200 * sin)
-		local AnimRad = 400 * intensity
+		local SinRad = math.abs(100 * sin)
+		local AnimRad = 1000 * intensity
 
 		local radius = math.Clamp(BaseRad + SinRad + AnimRad,BaseRad,5000)
 
 		local numParticles = 12
 
-		local height = (200 * vocal) + math.abs(200 * cos)
+		local height = (200 * vocal) + (math.abs(200 * cos) * self.HeightIntensity)
 
 		local center = self:LocalToWorld( Vector(0, 0,  radius + height) )
 		self.PartyCenter = center
@@ -288,8 +291,8 @@ function ENT:DrawTranslucent()
         self:DrawDynamicLighting()
 
 		-- Draw advanced detection visuals
-		self:DrawVocalRipples()
 		self:DrawGrooveWaves()
+		self:DrawVocalRipples()
 		self:DrawTransitionEffects()
     end
 
