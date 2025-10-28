@@ -10,6 +10,12 @@ include("shared.lua")
 AddCSLuaFile("sh_config.lua")
 include("sh_config.lua")
 
+-- Include server-side song library management
+include("sv_song_library.lua")
+
+-- Flag to track if library has been initialized
+local LibraryInitialized = false
+
 -- Security: Rate limiting for network messages
 local function CreateRateLimiter(interval)
     local limits = {}
@@ -30,7 +36,10 @@ local rateLimiters = {
     Stop = CreateRateLimiter(1),
     AddURL = CreateRateLimiter(2),
     RemoveSong = CreateRateLimiter(0.5),
-    SetVolume = CreateRateLimiter(0.5)
+    SetVolume = CreateRateLimiter(0.5),
+    AddToLibrary = CreateRateLimiter(3),
+    RemoveFromLibrary = CreateRateLimiter(2),
+    AddFromLibrary = CreateRateLimiter(1)
 }
 
 function ENT:SpawnFunction(ply, tr, name)
@@ -60,28 +69,19 @@ function ENT:Initialize()
         phys:SetMass(50)
     end
 
-    -- Initialize playlist
+    -- Initialize song library system (only once globally)
+    if not LibraryInitialized then
+        ZerosRaveReactor.InitializeSongLibrary(self)
+        LibraryInitialized = true
+    end
+
+    -- Initialize playlist (starts empty - songs added from library via menu)
     self.Playlist = {}
     self.CurrentIndex = 0
     self.IsPlaying = false
     self.Volume = 0.5
     self.Range = 2000
     self.MaxPlaylistSize = 50 -- Security: Limit playlist size
-
-    -- Load default playlist
-    self:LoadDefaultPlaylist()
-end
-
-function ENT:LoadDefaultPlaylist()
-	self.Playlist = {}
-	for i, v in ipairs(self.DefaultSongs) do
-		table.insert(self.Playlist, {
-			name = v[1],
-			artist = v[4],
-			url = v[3],
-			genre = v[2]
-		})
-	end
 end
 
 function ENT:Use(activator, caller)
@@ -110,16 +110,24 @@ util.AddNetworkString("PartyRadio_RemoveSong")
 util.AddNetworkString("PartyRadio_SetVolume")
 util.AddNetworkString("PartyRadio_UpdatePlaylist")
 util.AddNetworkString("PartyRadio_PlaySpecific")
+util.AddNetworkString("PartyRadio_UpdateSongLibrary")
+util.AddNetworkString("PartyRadio_AddToLibrary")
+util.AddNetworkString("PartyRadio_RemoveFromLibrary")
+util.AddNetworkString("PartyRadio_AddFromLibrary")
 
 function ENT:OpenMenu(ply)
     if not IsValid(ply) or not ply:IsPlayer() then return end
 
+    -- Send menu data
     net.Start("PartyRadio_OpenMenu")
     net.WriteEntity(self)
     net.WriteTable(self.Playlist)
     net.WriteBool(self.IsPlaying)
     net.WriteFloat(self.Volume)
     net.Send(ply)
+
+    -- Send song library to player
+    ZerosRaveReactor.SendLibraryToPlayer(ply)
 end
 
 function ENT:BroadcastState()
@@ -193,6 +201,53 @@ function ENT:AddSong(data)
         return false, "Playlist is full (max " .. self.MaxPlaylistSize .. " songs)"
     end
 
+    -- Sanitize strings
+    local name = string.sub(tostring(data.name or "Unknown"), 1, 100)
+    local artist = string.sub(tostring(data.artist or "Unknown"), 1, 100)
+    local url = tostring(data.url or "")
+    local genre = string.sub(tostring(data.genre or "Custom"), 1, 50)
+
+    table.insert(self.Playlist, {
+        name = name,
+        artist = artist,
+        url = url,
+        genre = genre,
+        hash = data.hash -- Store hash for visual indicator
+    })
+
+    self:BroadcastPlaylist()
+    return true
+end
+
+function ENT:AddSongFromLibrary(hash)
+    -- Get song from library
+    local song = ZerosRaveReactor.GetSongByHash(hash)
+    if not song then
+        return false, "Song not found in library"
+    end
+
+    -- Check playlist size limit
+    if #self.Playlist >= self.MaxPlaylistSize then
+        return false, "Playlist is full (max " .. self.MaxPlaylistSize .. " songs)"
+    end
+
+    -- Add to playlist
+    table.insert(self.Playlist, {
+        name = song.name,
+        artist = song.artist,
+        url = song.url,
+        genre = song.genre,
+        hash = hash
+    })
+
+    self:BroadcastPlaylist()
+    return true
+end
+
+function ENT:ValidateAndAddToLibrary(data, playerSteamID)
+    -- Security: Validate input
+    if not istable(data) then return false, "Invalid data" end
+
     -- Validate URL
     local url = tostring(data.url or "")
     if url == "" or #url > 500 then return false, "Invalid URL" end
@@ -220,15 +275,8 @@ function ENT:AddSong(data)
     local artist = string.sub(tostring(data.artist or "Unknown"), 1, 100)
     local genre = string.sub(tostring(data.genre or "Custom"), 1, 50)
 
-    table.insert(self.Playlist, {
-        name = name,
-        artist = artist,
-        url = url,
-        genre = genre
-    })
-
-    self:BroadcastPlaylist()
-    return true
+    -- Add to library
+    return ZerosRaveReactor.AddSongToLibrary(url, name, artist, genre, playerSteamID)
 end
 
 function ENT:RemoveSong(index)
@@ -345,5 +393,62 @@ net.Receive("PartyRadio_PlaySpecific", function(len, ply)
 
     if not ent:PlaySong(index) then
         ply:ChatPrint("Failed to play song: Invalid index")
+    end
+end)
+
+-- New network receivers for song library management
+net.Receive("PartyRadio_AddToLibrary", function(len, ply)
+    -- Security checks
+    if not IsValid(ply) or not ply:IsPlayer() then return end
+    if not ply:IsSuperAdmin() then return end
+    if not rateLimiters.AddToLibrary(ply) then return end
+
+    local ent = net.ReadEntity()
+    if not IsValid(ent) or ent:GetClass() ~= "zeros_party_radio" then return end
+
+    local data = net.ReadTable()
+
+    local success, err = ent:ValidateAndAddToLibrary(data, ply:SteamID64())
+    if not success then
+        ply:ChatPrint("Failed to add song to library: " .. (err or "Unknown error"))
+    else
+        ply:ChatPrint("Song added to library!")
+        -- Also add to current radio's playlist
+        ent:AddSongFromLibrary(err) -- err contains the hash on success
+    end
+end)
+
+net.Receive("PartyRadio_RemoveFromLibrary", function(len, ply)
+    -- Security checks
+    if not IsValid(ply) or not ply:IsPlayer() then return end
+    if not ply:IsSuperAdmin() then return end
+    if not rateLimiters.RemoveFromLibrary(ply) then return end
+
+    local hash = net.ReadString()
+
+    local success, err = ZerosRaveReactor.RemoveSongFromLibrary(hash, ply)
+    if not success then
+        ply:ChatPrint("Failed to remove song from library: " .. (err or "Unknown error"))
+    else
+        ply:ChatPrint("Song removed from library!")
+    end
+end)
+
+net.Receive("PartyRadio_AddFromLibrary", function(len, ply)
+    -- Security checks
+    if not IsValid(ply) or not ply:IsPlayer() then return end
+    if not ply:IsSuperAdmin() then return end
+    if not rateLimiters.AddFromLibrary(ply) then return end
+
+    local ent = net.ReadEntity()
+    if not IsValid(ent) or ent:GetClass() ~= "zeros_party_radio" then return end
+
+    local hash = net.ReadString()
+
+    local success, err = ent:AddSongFromLibrary(hash)
+    if not success then
+        ply:ChatPrint("Failed to add song to playlist: " .. (err or "Unknown error"))
+    else
+        ply:ChatPrint("Song added to playlist!")
     end
 end)
