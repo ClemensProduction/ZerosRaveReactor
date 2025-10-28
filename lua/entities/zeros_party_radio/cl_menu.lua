@@ -45,7 +45,7 @@ Performance Tips:
 local PANEL = {}
 
 function PANEL:Init()
-    self:SetSize(650, 500)
+    self:SetSize(800, 600)
     self:SetTitle("Party Radio Control")
     self:Center()
     self:MakePopup()
@@ -59,6 +59,14 @@ function PANEL:Init()
     -- Create tabs
     self.TabPanel = vgui.Create("DPropertySheet", self)
     self.TabPanel:Dock(FILL)
+
+    -- Song Library tab (NEW)
+    self.LibraryPanel = vgui.Create("DPanel", self.TabPanel)
+    self.LibraryPanel.Paint = function(s, w, h)
+        draw.RoundedBox(4, 0, 0, w, h, Color(40, 40, 40))
+    end
+
+    self:CreateLibraryControls()
 
     -- Playlist tab
     self.PlaylistPanel = vgui.Create("DPanel", self.TabPanel)
@@ -85,9 +93,112 @@ function PANEL:Init()
     self:CreateSettingsControls()
 
     -- Add tabs
+    self.TabPanel:AddSheet("Song Library", self.LibraryPanel, "icon16/database.png")
     self.TabPanel:AddSheet("Playlist", self.PlaylistPanel, "icon16/music.png")
     self.TabPanel:AddSheet("Add Music", self.AddURLPanel, "icon16/add.png")
     self.TabPanel:AddSheet("Settings", self.SettingsPanel, "icon16/cog.png")
+
+    -- Listen for library updates
+    hook.Add("PartyRadio_LibraryUpdated", self, function()
+        if IsValid(self) then
+            self:RefreshLibraryView()
+        end
+    end)
+end
+
+function PANEL:CreateLibraryControls()
+    -- Search/Filter panel
+    local searchPanel = vgui.Create("DPanel", self.LibraryPanel)
+    searchPanel:SetTall(40)
+    searchPanel:Dock(TOP)
+    searchPanel:DockMargin(5, 5, 5, 5)
+    searchPanel.Paint = function(s, w, h)
+        draw.RoundedBox(4, 0, 0, w, h, Color(50, 50, 50))
+    end
+
+    local searchLabel = vgui.Create("DLabel", searchPanel)
+    searchLabel:SetText("Search:")
+    searchLabel:SetTextColor(Color(255, 255, 255))
+    searchLabel:SetWide(60)
+    searchLabel:Dock(LEFT)
+    searchLabel:DockMargin(10, 10, 5, 10)
+
+    self.LibrarySearch = vgui.Create("DTextEntry", searchPanel)
+    self.LibrarySearch:Dock(FILL)
+    self.LibrarySearch:DockMargin(0, 5, 10, 5)
+    self.LibrarySearch:SetPlaceholderText("Search by name, artist, or genre...")
+    self.LibrarySearch.OnChange = function()
+        self:RefreshLibraryView()
+    end
+
+    -- Library list view
+    self.LibraryView = vgui.Create("DListView", self.LibraryPanel)
+    self.LibraryView:Dock(FILL)
+    self.LibraryView:DockMargin(5, 0, 5, 5)
+    self.LibraryView:SetMultiSelect(false)
+    self.LibraryView:AddColumn("Type"):SetFixedWidth(50)
+    self.LibraryView:AddColumn("Song")
+    self.LibraryView:AddColumn("Artist")
+    self.LibraryView:AddColumn("Genre"):SetFixedWidth(120)
+
+    -- Double click to add to playlist
+    self.LibraryView.DoDoubleClick = function(lst, index, pnl)
+        local hash = pnl.Hash
+        if hash and IsValid(self.Radio) then
+            net.Start("PartyRadio_AddFromLibrary")
+            net.WriteEntity(self.Radio)
+            net.WriteString(hash)
+            net.SendToServer()
+        end
+    end
+
+    -- Right-click menu
+    self.LibraryView.OnRowRightClick = function(lst, index, pnl)
+        local hash = pnl.Hash
+        local song = ZerosRaveReactor.SongLibrary[hash]
+        if not song then return end
+
+        local menu = DermaMenu()
+
+        menu:AddOption("Add to Playlist", function()
+            if IsValid(self.Radio) and hash then
+                net.Start("PartyRadio_AddFromLibrary")
+                net.WriteEntity(self.Radio)
+                net.WriteString(hash)
+                net.SendToServer()
+            end
+        end):SetIcon("icon16/add.png")
+
+        -- Only show remove option for custom songs and SuperAdmin
+        if not song.isDefault and LocalPlayer():IsSuperAdmin() then
+            menu:AddSpacer()
+
+            menu:AddOption("Remove from Library", function()
+                Derma_Query(
+                    "Are you sure you want to remove '" .. song.name .. "' from the library?\nThis will permanently delete it!",
+                    "Confirm Removal",
+                    "Yes", function()
+                        net.Start("PartyRadio_RemoveFromLibrary")
+                        net.WriteString(hash)
+                        net.SendToServer()
+                    end,
+                    "No"
+                )
+            end):SetIcon("icon16/delete.png")
+        end
+
+        menu:Open()
+    end
+
+    -- Info label
+    local infoLabel = vgui.Create("DLabel", self.LibraryPanel)
+    infoLabel:SetText("Double-click or right-click songs to add them to the playlist. Green = Default, Blue = Custom")
+    infoLabel:SetTextColor(Color(180, 180, 180))
+    infoLabel:SetTall(30)
+    infoLabel:Dock(TOP)
+    infoLabel:DockMargin(10, 5, 10, 0)
+    infoLabel:SetWrap(true)
+    infoLabel:SetContentAlignment(5)
 end
 
 function PANEL:CreatePlaylistControls()
@@ -141,10 +252,11 @@ function PANEL:CreatePlaylistControls()
     self.PlaylistView:Dock(FILL)
     self.PlaylistView:DockMargin(5, 5, 5, 5)
     self.PlaylistView:SetMultiSelect(false)
+    self.PlaylistView:AddColumn("Type"):SetFixedWidth(50)
     self.PlaylistView:AddColumn("Song")
     self.PlaylistView:AddColumn("Artist")
-    self.PlaylistView:AddColumn("Genre"):SetFixedWidth(150)
-	self.PlaylistView:AddColumn("Length"):SetFixedWidth(50)
+    self.PlaylistView:AddColumn("Genre"):SetFixedWidth(120)
+	self.PlaylistView:AddColumn("Length"):SetFixedWidth(60)
 
     -- Double click to play
     self.PlaylistView.DoDoubleClick = function(lst, index, pnl)
@@ -241,12 +353,12 @@ function PANEL:CreateAddURLControls()
 
     -- Add button
     local addButton = vgui.Create("DButton", container)
-    addButton:SetText("Add to Playlist")
+    addButton:SetText("Add to Library & Playlist")
     addButton:SetTall(30)
     addButton:Dock(TOP)
     addButton:DockMargin(0, 10, 0, 0)
     addButton.DoClick = function()
-        self:AddSongToPlaylist()
+        self:AddSongToLibrary()
     end
 
     -- Help text
@@ -259,7 +371,7 @@ function PANEL:CreateAddURLControls()
     helpText:DockMargin(0, 20, 0, 0)
 end
 
-function PANEL:AddSongToPlaylist()
+function PANEL:AddSongToLibrary()
     local name = string.Trim(self.NameEntry:GetValue())
     local artist = string.Trim(self.ArtistEntry:GetValue())
     local genre = string.Trim(self.GenreEntry:GetValue())
@@ -297,20 +409,20 @@ function PANEL:AddSongToPlaylist()
             "The URL doesn't appear to point to a common audio format.\nAre you sure you want to add it?",
             "Warning",
             "Yes", function()
-                self:SendAddSongRequest(name, artist, genre, url)
+                self:SendAddToLibraryRequest(name, artist, genre, url)
             end,
             "No"
         )
         return
     end
 
-    self:SendAddSongRequest(name, artist, genre, url)
+    self:SendAddToLibraryRequest(name, artist, genre, url)
 end
 
-function PANEL:SendAddSongRequest(name, artist, genre, url)
+function PANEL:SendAddToLibraryRequest(name, artist, genre, url)
     if not IsValid(self.Radio) then return end
 
-    net.Start("PartyRadio_AddURL")
+    net.Start("PartyRadio_AddToLibrary")
     net.WriteEntity(self.Radio)
     net.WriteTable({
         name = name,
@@ -326,7 +438,7 @@ function PANEL:SendAddSongRequest(name, artist, genre, url)
     self.GenreEntry:SetValue("")
     self.URLEntry:SetValue("")
 
-    notification.AddLegacy("Song added to playlist!", NOTIFY_GENERIC, 3)
+    notification.AddLegacy("Song added to library and playlist!", NOTIFY_GENERIC, 3)
     surface.PlaySound("buttons/button14.wav")
 end
 
@@ -441,18 +553,8 @@ function PANEL:SetRadio(ent, playlist, isPlaying, volume)
     self.Radio = ent
     self.Playlist = playlist or {}
 
-    -- Update playlist view
-    self.PlaylistView:Clear()
-    for i, song in ipairs(self.Playlist) do
-        if istable(song) then
-            self.PlaylistView:AddLine(
-                song.name or "Unknown",
-                song.artist or "Unknown",
-                song.genre or "Unknown",
-				ZerosRaveReactor.FileDuration[song.url] and string.FormattedTime( ZerosRaveReactor.FileDuration[song.url], "%02i:%02i" ) or "???"
-            )
-        end
-    end
+    -- Update playlist view with visual indicators
+    self:RefreshPlaylistView()
 
     -- Update play button
     if isPlaying then
@@ -464,6 +566,96 @@ function PANEL:SetRadio(ent, playlist, isPlaying, volume)
     -- Update volume
     if self.VolumeSlider and volume then
         self.VolumeSlider:SetValue(volume)
+    end
+
+    -- Populate library view
+    self:RefreshLibraryView()
+end
+
+function PANEL:RefreshPlaylistView()
+    if not IsValid(self.PlaylistView) then return end
+
+    self.PlaylistView:Clear()
+    for i, song in ipairs(self.Playlist) do
+        if istable(song) then
+            -- Determine song type
+            local songType = "Custom"
+            local songColor = Color(100, 150, 255) -- Blue for custom
+
+            if song.hash then
+                local librarySong = ZerosRaveReactor.SongLibrary[song.hash]
+                if librarySong and librarySong.isDefault then
+                    songType = "Default"
+                    songColor = Color(100, 255, 100) -- Green for default
+                end
+            end
+
+            local line = self.PlaylistView:AddLine(
+                songType,
+                song.name or "Unknown",
+                song.artist or "Unknown",
+                song.genre or "Unknown",
+				ZerosRaveReactor.FileDuration[song.url] and string.FormattedTime( ZerosRaveReactor.FileDuration[song.url], "%02i:%02i" ) or "???"
+            )
+
+            -- Color the type column
+            line:SetColumnColor(0, songColor)
+        end
+    end
+end
+
+function PANEL:RefreshLibraryView()
+    if not IsValid(self.LibraryView) then return end
+
+    local searchTerm = ""
+    if IsValid(self.LibrarySearch) then
+        searchTerm = string.lower(string.Trim(self.LibrarySearch:GetValue()))
+    end
+
+    self.LibraryView:Clear()
+
+    -- Convert library to sorted table
+    local sortedLibrary = {}
+    for hash, song in pairs(ZerosRaveReactor.SongLibrary) do
+        table.insert(sortedLibrary, {hash = hash, song = song})
+    end
+
+    -- Sort by name
+    table.sort(sortedLibrary, function(a, b)
+        return string.lower(a.song.name) < string.lower(b.song.name)
+    end)
+
+    -- Add to view with filtering
+    for _, entry in ipairs(sortedLibrary) do
+        local song = entry.song
+        local hash = entry.hash
+
+        -- Apply search filter
+        if searchTerm ~= "" then
+            local nameMatch = string.find(string.lower(song.name), searchTerm, 1, true)
+            local artistMatch = string.find(string.lower(song.artist), searchTerm, 1, true)
+            local genreMatch = string.find(string.lower(song.genre), searchTerm, 1, true)
+
+            if not (nameMatch or artistMatch or genreMatch) then
+                continue
+            end
+        end
+
+        local songType = song.isDefault and "Default" or "Custom"
+        local songColor = song.isDefault and Color(100, 255, 100) or Color(100, 150, 255)
+
+        local line = self.LibraryView:AddLine(
+            songType,
+            song.name,
+            song.artist,
+            song.genre
+        )
+
+        -- Store hash for reference
+        line.Hash = hash
+
+        -- Color the type column
+        line:SetColumnColor(0, songColor)
     end
 end
 
@@ -504,17 +696,6 @@ net.Receive("PartyRadio_UpdatePlaylist", function()
 
     if IsValid(PartyRadioMenuPanel) and PartyRadioMenuPanel.Radio == ent then
         PartyRadioMenuPanel.Playlist = playlist or {}
-
-        PartyRadioMenuPanel.PlaylistView:Clear()
-        for i, song in ipairs(PartyRadioMenuPanel.Playlist) do
-            if istable(song) then
-                PartyRadioMenuPanel.PlaylistView:AddLine(
-                    song.name or "Unknown",
-                    song.artist or "Unknown",
-                    song.genre or "Unknown",
-					ZerosRaveReactor.FileDuration[song.url] and string.FormattedTime( ZerosRaveReactor.FileDuration[song.url], "%02i:%02i" ) or "???"
-                )
-            end
-        end
+        PartyRadioMenuPanel:RefreshPlaylistView()
     end
 end)

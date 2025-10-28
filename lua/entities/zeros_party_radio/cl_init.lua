@@ -47,6 +47,7 @@ include("cl_visual_effects.lua")  -- Visual effects & rendering
 -- ============================================
 
 ZerosRaveReactor.FileDuration = ZerosRaveReactor.FileDuration or {}
+ZerosRaveReactor.SongLibrary = ZerosRaveReactor.SongLibrary or {}
 
 --[[
     Initialize entity properties and configurations
@@ -410,4 +411,17 @@ net.Receive("PartyRadio_UpdateState", function()
     end
 
     ent.IsPlaying = isPlaying
+end)
+
+-- Handle song library update message
+net.Receive("PartyRadio_UpdateSongLibrary", function()
+    local library = net.ReadTable()
+
+    if istable(library) then
+        ZerosRaveReactor.SongLibrary = library
+        print("[Party Radio] Received song library with " .. table.Count(library) .. " songs")
+
+        -- Update any open menus
+        hook.Run("PartyRadio_LibraryUpdated")
+    end
 end)
