@@ -262,7 +262,7 @@ end
 net.Receive("PartyRadio_PlayNext", function(len, ply)
     -- Security checks
     if not IsValid(ply) or not ply:IsPlayer() then return end
-    if not ply:IsAdmin() then return end
+    if not ply:IsSuperAdmin() then return end
     if not rateLimiters.PlayNext(ply) then return end
 
     local ent = net.ReadEntity()
@@ -274,7 +274,7 @@ end)
 net.Receive("PartyRadio_Stop", function(len, ply)
     -- Security checks
     if not IsValid(ply) or not ply:IsPlayer() then return end
-    if not ply:IsAdmin() then return end
+    if not ply:IsSuperAdmin() then return end
     if not rateLimiters.Stop(ply) then return end
 
     local ent = net.ReadEntity()
@@ -286,7 +286,7 @@ end)
 net.Receive("PartyRadio_AddURL", function(len, ply)
     -- Security checks
     if not IsValid(ply) or not ply:IsPlayer() then return end
-    if not ply:IsAdmin() then return end
+    if not ply:IsSuperAdmin() then return end
     if not rateLimiters.AddURL(ply) then return end
 
     local ent = net.ReadEntity()
@@ -306,7 +306,7 @@ end)
 net.Receive("PartyRadio_RemoveSong", function(len, ply)
     -- Security checks
     if not IsValid(ply) or not ply:IsPlayer() then return end
-    if not ply:IsAdmin() then return end
+    if not ply:IsSuperAdmin() then return end
     if not rateLimiters.RemoveSong(ply) then return end
 
     local ent = net.ReadEntity()
@@ -322,7 +322,7 @@ end)
 net.Receive("PartyRadio_SetVolume", function(len, ply)
     -- Security checks
     if not IsValid(ply) or not ply:IsPlayer() then return end
-    if not ply:IsAdmin() then return end
+    if not ply:IsSuperAdmin() then return end
     if not rateLimiters.SetVolume(ply) then return end
 
     local ent = net.ReadEntity()
@@ -335,7 +335,7 @@ end)
 net.Receive("PartyRadio_PlaySpecific", function(len, ply)
     -- Security checks
     if not IsValid(ply) or not ply:IsPlayer() then return end
-    if not ply:IsAdmin() then return end
+    if not ply:IsSuperAdmin() then return end
     if not rateLimiters.PlayNext(ply) then return end
 
     local ent = net.ReadEntity()

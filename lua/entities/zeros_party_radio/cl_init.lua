@@ -1,3 +1,31 @@
+-- GLOBALS > CLIENT
+local LocalPlayer = LocalPlayer
+
+-- GLOBALS > SHARED
+local IsValid = IsValid
+local CurTime = CurTime
+local FrameTime = FrameTime
+local print = print
+local tostring = tostring
+local Vector = Vector
+local Angle = Angle
+local Color = Color
+local Material = Material
+local include = include
+local Lerp = Lerp
+local istable = istable
+local type = type
+
+-- LIBARIES > SHARED
+local timer = timer
+local math = math
+local net = net
+local sound = sound
+
+-- LIBARIES > CLIENT
+local render = render
+
+
 -- ============================================
 -- PARTY RADIO CLIENT INITIALIZATION
 -- ============================================
@@ -8,6 +36,7 @@
 -- Include shared definitions and menu
 include("shared.lua")
 include("cl_menu.lua")
+include("sh_config.lua")
 
 -- Include our modular components
 include("cl_audio_analysis.lua")  -- Audio analysis & beat detection
@@ -16,6 +45,8 @@ include("cl_visual_effects.lua")  -- Visual effects & rendering
 -- ============================================
 -- INITIALIZATION
 -- ============================================
+
+ZerosRaveReactor.FileDuration = ZerosRaveReactor.FileDuration or {}
 
 --[[
     Initialize entity properties and configurations
@@ -156,7 +187,7 @@ function ENT:PlaySound(url)
     -- Start playing the new song
     sound.PlayURL(url, "3d noblock", function(channel, errID, errName)
         if not IsValid(channel) then
-            print("[Party Radio] Failed to play URL:", errName or "Unknown error", tostring(errID))
+			print("[Party Radio] Failed to play URL [" .. tostring(url) .. "] : ", errName or "Unknown error", tostring(errID))
             return
         end
 
@@ -168,6 +199,8 @@ function ENT:PlaySound(url)
         self.SoundChannel = channel
         self.IsPlaying = true
 
+		ZerosRaveReactor.FileDuration[url] = math.Round(channel:GetLength())
+
         channel:SetPos(self:GetPos())
         channel:Set3DEnabled(true)
         channel:Set3DFadeDistance(1200, 2500)
@@ -178,6 +211,7 @@ function ENT:PlaySound(url)
         -- This ensures accurate detection regardless of audio source quality
         self:RecalculateFrequencyBands()
 
+		/*
         local length = channel:GetLength()
         if length > 0 then
             timer.Create("PartyRadio_NextSong_" .. self:EntIndex(), length, 1, function()
@@ -188,6 +222,7 @@ function ENT:PlaySound(url)
                 end
             end)
         end
+		*/
     end)
 end
 
@@ -223,7 +258,7 @@ function ENT:Think()
     end
 
 	self.SmoothIntensity = Lerp(FrameTime() * 0.5,self.SmoothIntensity or 0,self.VisualIntensity)
-	self.SmoothVocalEnergyIntensity = Lerp(FrameTime() * 0.5,self.SmoothVocalEnergyIntensity or 0,(self.VocalEnergySmooth or 0) * 4)
+	self.SmoothVocalEnergyIntensity = Lerp(FrameTime() * 0.5,self.SmoothVocalEnergyIntensity or 0,(self.VocalEnergySmooth or 0) * 10)
 
 	if self.VocalEnergySmooth and self.VocalEnergySmooth > 0 then
 
@@ -236,14 +271,14 @@ function ENT:Think()
 		local vocal = self.SmoothVocalEnergyIntensity
 
 		local BaseRad = 100
-		local SinRad = math.abs(100 * sin)
-		local AnimRad = 1000 * intensity
+		local SinRad = math.abs(200 * sin)
+		local AnimRad = 500 * intensity
 
 		local radius = math.Clamp(BaseRad + SinRad + AnimRad,BaseRad,5000)
 
 		local numParticles = 12
 
-		local height = (200 * vocal) + (math.abs(200 * cos) * self.HeightIntensity)
+		local height = (100 * vocal) + (math.abs(100 * cos) * self.HeightIntensity)
 
 		local center = self:LocalToWorld( Vector(0, 0,  radius + height) )
 		self.PartyCenter = center
@@ -252,8 +287,8 @@ function ENT:Think()
 
 	    -- Trigger extra particles during intense moments
 	    if ( not self.NextBeat or CurTime() > self.NextBeat) then
-			self.NextBeat = CurTime() + 0.01
-	        self:CreateCircularParticles(center, "radio_speaker_beat01", radius, numParticles, -height, 0)
+			self.NextBeat = CurTime() + 0.1
+	        -- self:CreateCircularParticles(center, "radio_speaker_beat02", radius, numParticles, -height, 0)
 	    end
 	end
 
@@ -266,12 +301,17 @@ end
     Main rendering function
     Handles LOD and calls appropriate visual effects
 ]]
+local mat_laser = Material("trails/laser")
 function ENT:DrawTranslucent()
     -- Draw the base model
     self:DrawModel()
 
+	self:DrawDynamicLighting()
+
     -- Skip effects if not playing
     if not self:IsRadioPlaying() then return end
+
+	local ply = LocalPlayer()
 
     -- Calculate LOD based on distance
     local distance = self:GetListenerDistance()
@@ -288,12 +328,10 @@ function ENT:DrawTranslucent()
     self:AnalyzeFFT()
 
     -- Update view angle for 3D2D rendering
-    self.LocalViewAng = Angle(90, LocalPlayer():EyeAngles().y - 90, 90)
+    self.LocalViewAng = Angle(90, ply:EyeAngles().y - 90, 90)
 
     -- Draw effects based on LOD
     if self.LODLevel < 1 then
-        self:DrawDynamicLighting()
-
 		-- Draw advanced detection visuals
 		self:DrawGrooveWaves()
 		self:DrawVocalRipples()
@@ -304,7 +342,7 @@ function ENT:DrawTranslucent()
         self:DrawFrequencyBars()
     end
 
-	if LocalPlayer():IsSuperAdmin() then
+	if ply:GetNWBool("DevMode",false) then
 		self:DrawBeatIndicator()
 		self:DrawDebugInfo()
 	end
@@ -314,18 +352,18 @@ function ENT:DrawTranslucent()
         self.SoundChannel:SetPos(self:GetPos())
     end
 
-
+	/*
 	if not self.PartyRadius then return end
-
 	local angleStep = 360 / 12
 	for i = 0, 12 - 1 do
 		local angle = math.rad(i * angleStep + (CurTime() * 10))
 		local posX = math.cos(angle) * self.PartyRadius
 		local posY = math.sin(angle) * self.PartyRadius
 		local particlePos = self.PartyCenter + Vector(posX, posY, self.PartyHeight)
-		render.SetMaterial(Material("trails/laser"))
+		render.SetMaterial(mat_laser)
 		render.DrawBeam(particlePos, self.PartyCenter, 50, 0, 0, self.fft_col02)
 	end
+    */
 end
 
 -- ============================================
@@ -336,6 +374,7 @@ end
 net.Receive("PartyRadio_PlayNext", function()
     local ent = net.ReadEntity()
     if not IsValid(ent) or ent:GetClass() ~= "zeros_party_radio" then return end
+	if ent:GetPos():Distance(LocalPlayer():GetPos()) > 2000 then return end
 
     local songData = net.ReadTable()
     if not istable(songData) then return end

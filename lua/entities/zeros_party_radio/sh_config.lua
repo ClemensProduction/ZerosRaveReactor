@@ -6,6 +6,7 @@
 ENT.DefaultSongs = {}
 local function AddSong(name, artist, category, url) table.insert(ENT.DefaultSongs,{name, category, url,artist}) end
 
+
 -- French
 AddSong("Les Champs Elysees", "Joe Dassin", "French", "https://files.catbox.moe/kfqb9q.mp3")
 
@@ -46,6 +47,7 @@ AddSong("I Like The Way You Kiss Me (TRAVYP Techno Remix)", "Artemas", "Remix", 
 AddSong("Navela", "Yaba Buluku Boyz & Jux", "Afrobeats", "https://files.catbox.moe/676eg7.mp3")
 
 -- Comedy
+AddSong("Everyday Normal Guy", "Jon Lajoie", "Comedy", "https://files.catbox.moe/p4014p.mp3")
 AddSong("Everyday Normal Guy 2", "Jon Lajoie", "Comedy", "https://files.catbox.moe/z6mh1x.mp3")
 AddSong("Polkamon", "Weird Al Yankovic", "Comedy", "https://files.catbox.moe/qhowth.mp3")
 
@@ -98,7 +100,8 @@ AddSong("Сумецкая", "Otava Yo", "Folk", "https://files.catbox.moe/5p369r
 AddSong("Virtual Insanity", "Jamiroquai", "Funk", "https://files.catbox.moe/1umgs1.mp3")
 
 -- Goth Rock
-AddSong("Addams Family", "She Past Away", "Goth Rock", "https://files.catbox.moe/k2xzfd.mp3")
+AddSong("Ruh", "She Past Away", "Goth Rock", "https://files.catbox.moe/k2xzfd.mp3")
+AddSong("Rituel", "She Past Away", "Goth Rock", "https://cdn.discordapp.com/attachments/439502630767820812/1431283770324946967/She_Past_Away_-_Rituel_Wednesday_dance-jAFpr5mZrO4.mp3?ex=68fcda62&is=68fb88e2&hm=a76f526e9c4bf2cc92b4e933adb996f398ed012f3bba1bb079d9fb2a51350129&")
 
 -- Hip Hop
 AddSong("Who Do You Voodoo", "Sam B", "Hip Hop", "https://files.catbox.moe/jzxbmm.mp3")

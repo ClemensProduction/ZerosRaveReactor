@@ -1,3 +1,39 @@
+-- GLOBALS > CLIENT
+local ScrW, ScrH = ScrW, ScrH
+
+-- GLOBALS > SHARED
+local CurTime = CurTime
+local FrameTime = FrameTime
+local tostring = tostring
+local ipairs = ipairs
+local pairs = pairs
+local Vector = Vector
+local Angle = Angle
+local Color = Color
+local Material = Material
+local Lerp = Lerp
+local pcall = pcall
+local type = type
+
+-- LIBARIES > SHARED
+local math = math
+local string = string
+local table = table
+local util = util
+
+-- LIBARIES > CLIENT
+local surface = surface
+local draw = draw
+local cam = cam
+local render = render
+
+-- ENUMS
+local TEXT_ALIGN_TOP = TEXT_ALIGN_TOP
+local TEXT_ALIGN_BOTTOM = TEXT_ALIGN_BOTTOM
+local TEXT_ALIGN_LEFT = TEXT_ALIGN_LEFT
+local TEXT_ALIGN_RIGHT = TEXT_ALIGN_RIGHT
+
+
 -- ============================================
 -- VISUAL EFFECTS & RENDERING MODULE
 -- ============================================
@@ -18,6 +54,10 @@ local emptool_glow = Material("models/alyx/emptool_glow")
 local mat_ring_wave_additive = Material("particle/particle_ring_wave_additive")
 local laser = Material("trails/laser")
 local sprite_flare = Material("zerochain/zerolib/particle/zlib_flare01")
+
+local mat_beam01 = Material("sprites/tp_beam001")
+local mat_beam02 = Material("sprites/bluelaser1")
+
 
 -- ============================================
 -- HELPER FUNCTIONS
@@ -147,7 +187,6 @@ function ENT:OnBeatDetected(intensity, beatType)
     end
 	*/
 
-	/*
     -- Create screen shake for nearby players
     if self.Config.Effects.EnableScreenShake and intensity > 0.3 then
         local distance = self:GetListenerDistance()
@@ -157,7 +196,6 @@ function ENT:OnBeatDetected(intensity, beatType)
 			util.ScreenShake(self:GetPos(), power * 5, 1, 0.2, self.Config.Effects.MaxShakeDistance) -- Origin -- Amplitude -- Frequency -- Duration -- Radius
         end
     end
-	*/
 
     -- Trigger beat-specific visual effects
     self:OnBeatDrop(intensity, beatType)
@@ -177,12 +215,31 @@ function ENT:OnBeatDrop(intensity, beatType)
 
 	local Segments = 12
 
-	self:CreateCircularParticles(self.PartyCenter, "radio_speaker_beat01", self.PartyRadius, Segments, self.PartyHeight, 0)
+	-- self:CreateCircularParticles(self.PartyCenter, "radio_speaker_beat01", self.PartyRadius, Segments, self.PartyHeight, 0)
 
-	-- local effectsA = {"zpc2_oneshot_red","zpc2_oneshot_green","zpc2_oneshot_blue","zpc2_oneshot_white","zpc2_oneshot_violett","zpc2_oneshot_orange"}
-	-- local effects = {"zpc2_burst_medium_blue", "zpc2_burst_medium_cyan", "zpc2_burst_medium_green", "zpc2_burst_medium_white"}
-	-- local effectsA = {"zpc2_sparktower_blue","zpc2_sparktower_red","zpc2_sparktower_green","zpc2_sparktower_orange","zpc2_sparktower_pink","zpc2_sparktower_cyan","zpc2_sparktower_violett"}
+	local Effect_OneShot = {"zpc2_oneshot_red","zpc2_oneshot_green","zpc2_oneshot_blue","zpc2_oneshot_white","zpc2_oneshot_violett","zpc2_oneshot_orange"}
+	local Effect_BurstMedium = {"zpc2_burst_medium_blue", "zpc2_burst_medium_cyan", "zpc2_burst_medium_green", "zpc2_burst_medium_white"}
+	local Effect_SparkTower = {"zpc2_sparktower_blue","zpc2_sparktower_red","zpc2_sparktower_green","zpc2_sparktower_orange","zpc2_sparktower_pink","zpc2_sparktower_cyan","zpc2_sparktower_violett"}
+	local Effect_CakeExplo = {"zpc2_cake_explosion_blue","zpc2_cake_explosion_red","zpc2_cake_explosion_green","zpc2_cake_explosion_orange","zpc2_cake_explosion_pink","zpc2_cake_explosion_cyan","zpc2_cake_explosion_violett"}
 
+	local effect_kick = Effect_CakeExplo[math.random(#Effect_CakeExplo)]
+	local effect_snare = Effect_BurstMedium[math.random(#Effect_BurstMedium)]
+	--local effect_hithat= Effect_SparkTower[math.random(#Effect_SparkTower)]
+	local effect_hithat = Effect_OneShot[math.random(#Effect_OneShot)]
+	local effect_clap = Effect_OneShot[math.random(#Effect_OneShot)]
+
+
+	if beatType == "Kick" then
+		self:CreateCircularParticles(self.PartyCenter, effect_kick, self.PartyRadius, Segments, self.PartyHeight, 0)
+	elseif beatType == "Snare" then
+		--self:CreateCircularParticles(self.PartyCenter, effect_snare, self.PartyRadius, Segments, self.PartyHeight, 0,-90)
+	elseif beatType == "HiHat" then
+		self:CreateCircularParticles(self.PartyCenter, effect_hithat, self.PartyRadius, Segments, self.PartyHeight, 0,-90)
+	elseif beatType == "Clap" then
+		self:CreateCircularParticles(self.PartyCenter, effect_clap, self.PartyRadius, Segments, self.PartyHeight, 0,0)
+	end
+
+	/*
 	if beatType == "Kick" then
 		self:CreateCircularParticles(self.PartyCenter, "zpc2_cake_explosion_red", self.PartyRadius, Segments, self.PartyHeight, 0)
 	elseif beatType == "Snare" then
@@ -192,6 +249,7 @@ function ENT:OnBeatDrop(intensity, beatType)
 	elseif beatType == "Clap" then
 		self:CreateCircularParticles(self.PartyCenter, "zpc2_oneshot_green", self.PartyRadius, Segments, self.PartyHeight, 0)
 	end
+	*/
 end
 
 -- ============================================
@@ -205,7 +263,7 @@ end
 function ENT:OnVocalDetected(intensity)
 	--print("OnVocalDetected: "..tostring(intensity))
     -- Create ripple effect at different height
-    local pos = self:LocalToWorld(Vector(0,0,2))
+    local pos = self:LocalToWorld(Vector(0,0,5))
 
     -- Color based on vocal intensity
 	local color = Color(self.CurrentColor.r,self.CurrentColor.g, self.CurrentColor.b, 255 * intensity)
@@ -299,17 +357,34 @@ end
     @param intensity: Drop intensity (0-1)
 ]]
 function ENT:CreateDropEffect(intensity)
+	if intensity < 0.25 then return end
+
+	if self.LastDropTime and (self.LastDropTime + 1) > CurTime() then return end
+
     local pos = self:GetPos() --+ Vector(0, 0, 100 * self.ModelScale)
 
+	local Effect_OneShot = {"zpc2_oneshot_red","zpc2_oneshot_green","zpc2_oneshot_blue","zpc2_oneshot_white","zpc2_oneshot_violett","zpc2_oneshot_orange"}
+	local Effect_BurstMedium = {"zpc2_burst_medium_blue", "zpc2_burst_medium_cyan", "zpc2_burst_medium_green", "zpc2_burst_medium_white"}
+	local Effect_SparkTower = {"zpc2_sparktower_blue","zpc2_sparktower_red","zpc2_sparktower_green","zpc2_sparktower_orange","zpc2_sparktower_pink","zpc2_sparktower_cyan","zpc2_sparktower_violett"}
+	local Effect_CakeExplo = {"zpc2_cake_explosion_blue","zpc2_cake_explosion_red","zpc2_cake_explosion_green","zpc2_cake_explosion_orange","zpc2_cake_explosion_pink","zpc2_cake_explosion_cyan","zpc2_cake_explosion_violett"}
+
+	local effect01 = Effect_SparkTower[math.random(#Effect_SparkTower)] or "zpc2_burst_big_pink"
+	local effect02 = Effect_CakeExplo[math.random(#Effect_CakeExplo)] or "zpc2_cake_explosion_red"
+
     -- Big explosion effect
-    ParticleEffect("zpc2_cake_explosion_red", pos, Angle(0, 0, 0), nil)
+    ParticleEffect(effect02, pos, Angle(0, 0, 0), nil)
+
+	local pos02 = self.PartyCenter + self:GetUp() * 700 + self:GetRight() * math.random(-100,100) + self:GetForward() * math.random(-100,100)
+	-- ParticleEffect("radio_speaker_beat0" .. math.random(3,5), pos02, Angle(0, 0, 0), nil)
+
+    self:CreateCircularParticles(self.PartyCenter, Effect_SparkTower[math.random(#Effect_SparkTower)], self.PartyRadius, 12, self.PartyHeight, 0,90)
+
 
     -- Radial burst
     for i = 1, 12 do
         local angle = (i / 12) * math.pi * 2
 		local burstPos = pos + Vector(math.cos(angle) * 400, math.sin(angle) * 400, 0)
-        -- ParticleEffect("zpc2_sparktower_red", burstPos, Angle(0, 0, 0), nil)
-		ParticleEffect("zpc2_burst_big_pink", burstPos, Angle(0, 0, 0), nil)
+		ParticleEffect(effect01, burstPos, Angle(0, 0, 0), nil)
     end
 
     -- Screen shake for drops
@@ -335,14 +410,19 @@ end
     @param height: Vertical offset
     @param offset: Angular offset
 ]]
-function ENT:CreateCircularParticles(center, particleName, radius, numParticles, height, offset)
+function ENT:CreateCircularParticles(center, particleName, radius, numParticles, height, offset,yaw)
 
 	offset = CurTime() * 10
+	yaw = yaw or 0
 
     local origin = center -- + Vector(0, 0, 30 * self:GetModelScale())
     local angleStep = 360 / numParticles
 
+	self.SmoothEffectRad = Lerp(FrameTime() * 0.5,self.SmoothEffectRad or 0,120 * self.BassIntensity)
+
+	local Outside = false
     for i = 0, numParticles - 1 do
+		Outside = not Outside
         local angle = math.rad(i * angleStep + offset)
         local posX = math.cos(angle) * radius
         local posY = math.sin(angle) * radius
@@ -350,11 +430,13 @@ function ENT:CreateCircularParticles(center, particleName, radius, numParticles,
 
         -- Orient particle to face center
         local ang = (origin - particlePos):Angle()
-        --ang:RotateAroundAxis(ang:Right(), -90)
+		--ang:RotateAroundAxis(ang:Right(), -90)
+		local rot = 90 - ( math.abs(120 * math.sin(CurTime() * 0.1)) ) - self.SmoothEffectRad
+		rot = math.Clamp(rot,-100,300)
+		ang:RotateAroundAxis(ang:Right(),yaw + rot)
 
 		--debugoverlay.Sphere(MainEffectPos,25,0.1,Color( 255, 255, 255, 100 ))
-
-		--debugoverlay.Axis(particlePos, ang,10,1,false)
+		-- debugoverlay.Axis(particlePos, ang,50,0.01,false)
 
         ParticleEffect(particleName, particlePos, ang, nil)
     end
@@ -367,6 +449,8 @@ end
 ]]
 function ENT:CreateBeatParticles(intensity, beatType)
     if not self.Config.Effects.EnableParticles then return end
+	if not self.PartyRadius then return end
+	if not self.CurrentColor then return end
 
     local pos = self:GetPos()
 
@@ -380,8 +464,8 @@ function ENT:CreateBeatParticles(intensity, beatType)
 	local ang = self:LocalToWorldAngles(Angle(90,0,0))
 
     for i = 1, particleCount do
-        --local particle = emitter:Add("sprites/light_glow02_add", pos)
-		local particle = emitter:Add("particle/particle_ring_wave_additive", pos)
+        local particle = emitter:Add("sprites/light_glow02_add", pos)
+		--local particle = emitter:Add("particle/particle_ring_wave_additive", pos)
         if particle then
             -- Create radial burst pattern
             local angle = (i / particleCount) * math.pi * 2
@@ -390,7 +474,7 @@ function ENT:CreateBeatParticles(intensity, beatType)
 
             -- Configure particle properties
 			particle:SetAngles(ang)
-            --particle:SetVelocity(velocity)
+            particle:SetVelocity(velocity)
             particle:SetDieTime(1)
             particle:SetStartAlpha(255)
             particle:SetEndAlpha(0)
@@ -432,7 +516,7 @@ function ENT:OnBassUpdate(intensity)
         end
     cam.End3D2D()
 
-	/*
+
     -- Distance-based screen shake
     local dist = self:GetListenerDistance()
     if dist < 600 then
@@ -442,7 +526,6 @@ function ENT:OnBassUpdate(intensity)
         local shake_intens = (1 / squareDist) * shake_strength
 		util.ScreenShake(self:GetPos(), intensity * 0.1, 1, 0.1, intensity * shake_intens * 10)
     end
-	*/
 end
 
 --[[
@@ -457,7 +540,15 @@ function ENT:OnTrebleUpdate(intensity)
 	local dist = self:GetListenerDistance()
 
 	render.SetMaterial(laser)
-	render.DrawBeam(self:GetPos(), self.PartyCenter, 200, 0, 0, self.fft_col02)
+	render.DrawBeam(self:GetPos(), self.PartyCenter, 500 * self.VisualIntensity, 0, 0, self.fft_col02)
+
+	render.SetMaterial(mat_beam01)
+	render.DrawBeam(self:GetPos(), self.PartyCenter, 300 * self.VisualIntensity, 0, 0, self.fft_col02)
+
+
+	render.SetMaterial(laser)
+	render.DrawBeam(self:GetPos(), self.PartyCenter, 250 * self.VisualIntensity, 0, 0, Color(255,255,255,150))
+
 
 	cam.Start3D2D(self.PartyCenter, self.LocalViewAng or angle_zero, self.fft_scale)
         surface.SetMaterial(sprite_flare)
@@ -489,6 +580,14 @@ function ENT:OnTrebleUpdate(intensity)
         --end
     cam.End3D2D()
     --cam.IgnoreZ(false)
+
+
+	cam.Start3D2D(self.PartyCenter, self.LocalViewAng or angle_zero, self.VisualIntensity)
+		-- Background glow
+		surface.SetMaterial(radial_shadow)
+		surface.SetDrawColor(glow_col)
+		surface.DrawTexturedRectRotated(0, 0, 700, 700, 0)
+	cam.End3D2D()
 end
 
 --[[
@@ -553,7 +652,7 @@ function ENT:OnVolumeUpdate(intensity)
 
         -- Update rotation
         if not self.next_rot_target_check or CurTime() > self.next_rot_target_check then
-			local val = self.fft_tempo_avg * 100
+			local val = self.BassIntensity * 45
             self.rot_speed_target = (self.rot_speed_target or 0) + (self.FlipRotationDir and val or -val)
             self.next_rot_target_check = CurTime() + 1
         end
@@ -668,7 +767,7 @@ function ENT:DrawGrooveWaves()
             color = Color(255, 100, 255, alpha)
         end
 
-        cam.Start3D2D(self:GetPos() + Vector(0, 0, 2), Angle(0, 0, 0), 1)
+        cam.Start3D2D(self:GetPos() + Vector(0, 0, 5), Angle(0, 0, 0), 1)
 			surface.SetDrawColor(color.r, color.g, color.b,alpha)
 			surface.SetMaterial(mat_ring_wave_additive)
 			surface.DrawTexturedRect(-radius/2,-radius/2,radius,radius)
@@ -725,20 +824,41 @@ end
     Pulses light based on music intensity
 ]]
 function ENT:DrawDynamicLighting()
+
+	if not self.LODLevel then return end
+	if self.LODLevel > 1 then return end
+
+
     if not self.Config.Effects.EnableLighting then return end
-	if not self.PartyCenter or not self.vocalEnergySmooth or not self.vocalPresenceSmooth then return end
 
-    local dlight = DynamicLight(self:EntIndex())
-    if dlight then
-        dlight.pos = self.PartyCenter
-        dlight.r = self.CurrentColor.r
-        dlight.g = self.CurrentColor.g
-        dlight.b = self.CurrentColor.b
+	if self:IsRadioPlaying() then
 
-        dlight.brightness = (10 * self.vocalEnergySmooth)
-        dlight.size = math.Clamp(3000 * self.vocalPresenceSmooth, 100, 3000)
-        dlight.decay = 1000
-        dlight.dietime = CurTime() + 0.1
+		if not self.vocalPresenceSmooth then return end
+
+	    local dlight = DynamicLight(self:EntIndex())
+	    if dlight then
+	        dlight.pos = self:LocalToWorld(Vector(0,0,100))
+	        dlight.r = self.CurrentColor.r
+	        dlight.g = self.CurrentColor.g
+	        dlight.b = self.CurrentColor.b
+
+	        dlight.brightness = (4 * self.vocalPresenceSmooth)
+	        dlight.size = math.Clamp(3000 * self.vocalPresenceSmooth, 100, 3000)
+	        dlight.decay = 1000
+	        dlight.dietime = CurTime() + 0.1
+		end
+	else
+		local dlight = DynamicLight(self:EntIndex())
+		if dlight then
+			dlight.pos = self:LocalToWorld(Vector(0,0,100))
+			dlight.r = 255
+			dlight.g = 255
+			dlight.b = 255
+			dlight.brightness = 1
+			dlight.size = 1024
+			dlight.decay = 1000
+			dlight.dietime = CurTime() + 0.1
+		end
 	end
 end
 

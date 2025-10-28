@@ -6,6 +6,7 @@ ENT.Spawnable = true
 ENT.AdminOnly = true
 ENT.RenderGroup = RENDERGROUP_BOTH
 
+ZerosRaveReactor = ZerosRaveReactor or {}
 
 ----------------------------------------
 -- Precache Particle Effects used for Beat Visualization
@@ -22,6 +23,10 @@ PrecacheParticleSystem("zpc2_cake_explosion_violett")
 
 game.AddParticles("particles/radio_speaker_effects.pcf")
 PrecacheParticleSystem("radio_speaker_beat01")
+PrecacheParticleSystem("radio_speaker_beat02")
+PrecacheParticleSystem("radio_speaker_beat03")
+PrecacheParticleSystem("radio_speaker_beat04")
+PrecacheParticleSystem("radio_speaker_beat05")
 
 
 game.AddParticles("particles/zpc2_spark_explosions.pcf")

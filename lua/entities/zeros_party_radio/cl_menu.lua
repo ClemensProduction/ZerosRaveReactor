@@ -1,3 +1,23 @@
+-- GLOBALS > SHARED
+local IsValid = IsValid
+local ipairs = ipairs
+local Color = Color
+local istable = istable
+
+
+-- LIBARIES > SHARED
+local string = string
+local net = net
+
+-- LIBARIES > CLIENT
+local surface = surface
+local draw = draw
+local vgui = vgui
+local notification = notification
+
+-- ENUMS
+local FILL = FILL
+local TOP = TOP
 
 
 local info01 = [[
@@ -25,12 +45,13 @@ Performance Tips:
 local PANEL = {}
 
 function PANEL:Init()
-    self:SetSize(600, 500)
+    self:SetSize(650, 500)
     self:SetTitle("Party Radio Control")
     self:Center()
     self:MakePopup()
     self:SetDraggable(true)
     self:ShowCloseButton(true)
+	self:SetSizable(true)
 
     self.Radio = nil
     self.Playlist = {}
@@ -120,9 +141,10 @@ function PANEL:CreatePlaylistControls()
     self.PlaylistView:Dock(FILL)
     self.PlaylistView:DockMargin(5, 5, 5, 5)
     self.PlaylistView:SetMultiSelect(false)
-    self.PlaylistView:AddColumn("Name")
+    self.PlaylistView:AddColumn("Song")
     self.PlaylistView:AddColumn("Artist")
-    self.PlaylistView:AddColumn("Genre")
+    self.PlaylistView:AddColumn("Genre"):SetFixedWidth(150)
+	self.PlaylistView:AddColumn("Length"):SetFixedWidth(50)
 
     -- Double click to play
     self.PlaylistView.DoDoubleClick = function(lst, index, pnl)
@@ -426,7 +448,8 @@ function PANEL:SetRadio(ent, playlist, isPlaying, volume)
             self.PlaylistView:AddLine(
                 song.name or "Unknown",
                 song.artist or "Unknown",
-                song.genre or "Unknown"
+                song.genre or "Unknown",
+				ZerosRaveReactor.FileDuration[song.url] and string.FormattedTime( ZerosRaveReactor.FileDuration[song.url], "%02i:%02i" ) or "???"
             )
         end
     end
@@ -488,7 +511,8 @@ net.Receive("PartyRadio_UpdatePlaylist", function()
                 PartyRadioMenuPanel.PlaylistView:AddLine(
                     song.name or "Unknown",
                     song.artist or "Unknown",
-                    song.genre or "Unknown"
+                    song.genre or "Unknown",
+					ZerosRaveReactor.FileDuration[song.url] and string.FormattedTime( ZerosRaveReactor.FileDuration[song.url], "%02i:%02i" ) or "???"
                 )
             end
         end
