@@ -423,6 +423,7 @@ function ENT:CreateCircularParticles(center, particleName, radius, numParticles,
     local origin = center
     local angleStep = 360 / numParticles
     local angleStepRad = math.rad(angleStep)  -- OPTIMIZATION: Pre-calculate radian step
+    local offsetRad = math.rad(offset)         -- OPTIMIZATION: Pre-calculate offset in radians
 
 	self.SmoothEffectRad = Lerp(FrameTime() * 0.5, self.SmoothEffectRad or 0, 120 * self.BassIntensity)
 
@@ -434,8 +435,8 @@ function ENT:CreateCircularParticles(center, particleName, radius, numParticles,
 	local Outside = false
     for i = 0, numParticles - 1 do
 		Outside = not Outside
-        -- OPTIMIZATION: Use pre-calculated radian step
-        local angle = math.rad(i * angleStep + offset)
+        -- OPTIMIZATION: Use pre-calculated radian values (no math.rad call in loop!)
+        local angle = offsetRad + (i * angleStepRad)
         local cosAngle = math.cos(angle)
         local sinAngle = math.sin(angle)
         local posX = cosAngle * radius
