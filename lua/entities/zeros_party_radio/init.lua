@@ -40,6 +40,7 @@ local rateLimiters = {
     AddToLibrary = CreateRateLimiter(3),
     RemoveFromLibrary = CreateRateLimiter(2),
     AddFromLibrary = CreateRateLimiter(1),
+    EditSongInLibrary = CreateRateLimiter(2),
     ReportDuration = CreateRateLimiter(2),
     SongEnded = CreateRateLimiter(1)
 }
@@ -116,6 +117,7 @@ util.AddNetworkString("PartyRadio_UpdateSongLibrary")
 util.AddNetworkString("PartyRadio_AddToLibrary")
 util.AddNetworkString("PartyRadio_RemoveFromLibrary")
 util.AddNetworkString("PartyRadio_AddFromLibrary")
+util.AddNetworkString("PartyRadio_EditSongInLibrary")
 util.AddNetworkString("PartyRadio_ReportDuration")
 util.AddNetworkString("PartyRadio_SongEnded")
 
@@ -491,6 +493,26 @@ net.Receive("PartyRadio_AddFromLibrary", function(len, ply)
         ply:ChatPrint("Failed to add song to playlist: " .. (err or "Unknown error"))
     else
         ply:ChatPrint("Song added to playlist!")
+    end
+end)
+
+net.Receive("PartyRadio_EditSongInLibrary", function(len, ply)
+    -- Security checks
+    if not IsValid(ply) or not ply:IsPlayer() then return end
+    if not ply:IsSuperAdmin() then return end
+    if not rateLimiters.EditSongInLibrary(ply) then return end
+
+    local data = net.ReadTable()
+    local hash = data.hash
+    local name = data.name
+    local artist = data.artist
+    local genre = data.genre
+
+    local success, err = ZerosRaveReactor.EditSongInLibrary(hash, name, artist, genre, ply)
+    if not success then
+        ply:ChatPrint("Failed to edit song: " .. (err or "Unknown error"))
+    else
+        ply:ChatPrint("Song updated successfully!")
     end
 end)
 

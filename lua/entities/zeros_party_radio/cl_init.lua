@@ -257,31 +257,38 @@ end
 --[[
     Main think function - updates model scale and animations
 ]]
+-- Cache FrameTime multipliers
+local FRAMETIME_05 = 0.5
+local FRAMETIME_4 = 4
+
 function ENT:Think()
+    local frameTime = FrameTime()
+    local curTime = CurTime()
+
     -- Smooth beat scale back to normal
-    if self.BeatScale and self.BeatScale > 1 then
-        self.BeatScale = Lerp(FrameTime() * 0.5, self.BeatScale, 1)
+    if self.BeatScale > 1 then
+        self.BeatScale = Lerp(frameTime * FRAMETIME_05, self.BeatScale, 1)
     end
 
     if self:IsRadioPlaying() then
         -- Apply beat scale with smoothing
-        local targetScale = self.ModelScale * (self.BeatScale or 1)
-        self.SmoothScale = Lerp(FrameTime() * 4, self.SmoothScale or 0, targetScale)
+        local targetScale = self.ModelScale * self.BeatScale
+        self.SmoothScale = Lerp(frameTime * FRAMETIME_4, self.SmoothScale, targetScale)
         self:SetModelScale(self.SmoothScale, 0)
     else
         -- Reset to base scale when not playing
         self:SetModelScale(self.ModelScale, 0)
     end
 
-	self.SmoothIntensity = Lerp(FrameTime() * 0.5,self.SmoothIntensity or 0,self.VisualIntensity)
-	self.SmoothVocalEnergyIntensity = Lerp(FrameTime() * 0.5,self.SmoothVocalEnergyIntensity or 0,(self.VocalEnergySmooth or 0) * 10)
+	self.SmoothIntensity = Lerp(frameTime * FRAMETIME_05, self.SmoothIntensity, self.VisualIntensity)
+	self.SmoothVocalEnergyIntensity = Lerp(frameTime * FRAMETIME_05, self.SmoothVocalEnergyIntensity, self.VocalEnergySmooth * 10)
 
-	if self.VocalEnergySmooth and self.VocalEnergySmooth > 0 then
+	if self.VocalEnergySmooth > 0 then
+		self.HeightIntensity = Lerp(frameTime * FRAMETIME_05, self.HeightIntensity, self.SmoothVocalEnergyIntensity > 0.5 and 2 or 0)
 
-		self.HeightIntensity = Lerp(FrameTime() * 0.5,self.HeightIntensity or 0,self.SmoothVocalEnergyIntensity > 0.5 and 2 or 0)
-
-		local sin = math.sin(CurTime())
-		local cos = math.cos(CurTime())
+		-- Cache trig values
+		local sin = math.sin(curTime)
+		local cos = math.cos(curTime)
 
 		local intensity = self.SmoothIntensity
 		local vocal = self.SmoothVocalEnergyIntensity
@@ -290,26 +297,24 @@ function ENT:Think()
 		local SinRad = math.abs(200 * sin)
 		local AnimRad = 500 * intensity
 
-		local radius = math.Clamp(BaseRad + SinRad + AnimRad,BaseRad,5000)
-
-		local numParticles = 12
-
+		local radius = math.Clamp(BaseRad + SinRad + AnimRad, BaseRad, 5000)
 		local height = (100 * vocal) + (math.abs(100 * cos) * self.HeightIntensity)
 
-		local center = self:LocalToWorld( Vector(0, 0,  radius + height) )
+		-- Cache party center calculations
+		local center = self:LocalToWorld(Vector(0, 0, radius + height))
 		self.PartyCenter = center
 		self.PartyRadius = radius
 		self.PartyHeight = -height
 
 	    -- Trigger extra particles during intense moments
-	    if ( not self.NextBeat or CurTime() > self.NextBeat) then
-			self.NextBeat = CurTime() + 0.1
+	    if not self.NextBeat or curTime > self.NextBeat then
+			self.NextBeat = curTime + 0.1
 	        -- self:CreateCircularParticles(center, "radio_speaker_beat02", radius, numParticles, -height, 0)
 	    end
 	end
 
     -- Continue thinking
-    self:SetNextClientThink(CurTime())
+    self:SetNextClientThink(curTime)
     return true
 end
 
@@ -318,6 +323,10 @@ end
     Handles LOD and calls appropriate visual effects
 ]]
 local mat_laser = Material("trails/laser")
+-- Cache player reference
+local cachedPlayer
+local nextPlayerCache = 0
+
 function ENT:DrawTranslucent()
     -- Draw the base model
     self:DrawModel()
@@ -327,24 +336,37 @@ function ENT:DrawTranslucent()
     -- Skip effects if not playing
     if not self:IsRadioPlaying() then return end
 
-	local ply = LocalPlayer()
+	-- Cache LocalPlayer() to avoid repeated lookups
+	local curTime = CurTime()
+	if not cachedPlayer or curTime > nextPlayerCache then
+		cachedPlayer = LocalPlayer()
+		nextPlayerCache = curTime + 1 -- Update cache every second
+	end
 
     -- Calculate LOD based on distance
     local distance = self:GetListenerDistance()
-    if distance > self.Config.Performance.LODDistance then
+    local lodDistance = self.Config.Performance.LODDistance
+    local halfLODDistance = lodDistance * 0.5  -- Avoid division
+
+    if distance > lodDistance then
         self.LODLevel = 2 -- Low detail
-    elseif distance > self.Config.Performance.LODDistance / 2 then
+    elseif distance > halfLODDistance then
         self.LODLevel = 1 -- Medium detail
     else
         self.LODLevel = 0 -- Full detail
     end
 
-    -- Update FFT analysis at configured rate
-    self.NextUpdateTime = CurTime() + self.Config.Performance.UpdateRate
-    self:AnalyzeFFT()
+    -- Update FFT analysis at configured rate (only if time has passed)
+    if not self.NextUpdateTime or curTime >= self.NextUpdateTime then
+        self.NextUpdateTime = curTime + self.Config.Performance.UpdateRate
+        self:AnalyzeFFT()
+    end
 
-    -- Update view angle for 3D2D rendering
-    self.LocalViewAng = Angle(90, ply:EyeAngles().y - 90, 90)
+    -- Update view angle for 3D2D rendering (cache calculation)
+    if not self.NextAngleUpdate or curTime >= self.NextAngleUpdate then
+        self.LocalViewAng = Angle(90, cachedPlayer:EyeAngles().y - 90, 90)
+        self.NextAngleUpdate = curTime + 0.05 -- Update angle 20 times per second
+    end
 
     -- Draw effects based on LOD
     if self.LODLevel < 1 then
@@ -358,14 +380,15 @@ function ENT:DrawTranslucent()
         self:DrawFrequencyBars()
     end
 
-	if ply:GetNWBool("DevMode",false) then
+	if cachedPlayer:GetNWBool("DevMode", false) then
 		self:DrawBeatIndicator()
 		self:DrawDebugInfo()
 	end
 
-    -- Keep audio positioned at entity
-    if IsValid(self.SoundChannel) then
-        self.SoundChannel:SetPos(self:GetPos())
+    -- Keep audio positioned at entity (only when sound channel exists)
+    local soundChan = self.SoundChannel
+    if IsValid(soundChan) then
+        soundChan:SetPos(self:GetPos())
     end
 
 	/*

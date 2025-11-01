@@ -140,44 +140,10 @@ function ZerosRaveReactor.RemoveSongFromLibrary(hash, ply)
         return false, "Song not found in library"
     end
 
-    -- Update song duration in library
-    function ZerosRaveReactor.UpdateSongDuration(hash, duration)
-        local hashStr = tostring(hash)
-
-        -- Check if song exists
-        if not ZerosRaveReactor.SongLibrary[hashStr] then
-            return false, "Song not found in library"
-        end
-
-        -- Validate duration (must be between 1 second and 2 hours)
-        duration = tonumber(duration) or 0
-        if duration < 1 or duration > 7200 then
-            return false, "Invalid duration"
-        end
-
-        local song = ZerosRaveReactor.SongLibrary[hashStr]
-
-        -- Only update if duration is not already set (first report wins)
-        if not song.duration or song.duration == 0 then
-            song.duration = math.Round(duration)
-
-            -- Save to disk
-            ZerosRaveReactor.SaveSongLibrary()
-
-            -- Broadcast update to all clients
-            ZerosRaveReactor.BroadcastLibraryUpdate()
-
-            print("[Party Radio] Updated duration for '" .. song.name .. "': " .. song.duration .. "s")
-            return true, song.duration
-        end
-
-        -- Duration already known, return existing value
-        return true, song.duration
-    end
-
-    -- Get song by hash
-    function ZerosRaveReactor.GetSongByHash(hash)
-        return ZerosRaveReactor.SongLibrary[tostring(hash)]
+    -- Check if it's a default song
+    local song = ZerosRaveReactor.SongLibrary[hashStr]
+    if song.isDefault then
+        return false, "Cannot remove default songs from library"
     end
 
     -- Check if player is SuperAdmin
@@ -196,6 +162,80 @@ function ZerosRaveReactor.RemoveSongFromLibrary(hash, ply)
     ZerosRaveReactor.BroadcastLibraryUpdate()
 
     print("[Party Radio] Removed song from library: " .. songName)
+    return true
+end
+
+-- Update song duration in library
+function ZerosRaveReactor.UpdateSongDuration(hash, duration)
+    local hashStr = tostring(hash)
+
+    -- Check if song exists
+    if not ZerosRaveReactor.SongLibrary[hashStr] then
+        return false, "Song not found in library"
+    end
+
+    -- Validate duration (must be between 1 second and 2 hours)
+    duration = tonumber(duration) or 0
+    if duration < 1 or duration > 7200 then
+        return false, "Invalid duration"
+    end
+
+    local song = ZerosRaveReactor.SongLibrary[hashStr]
+
+    -- Only update if duration is not already set (first report wins)
+    if not song.duration or song.duration == 0 then
+        song.duration = math.Round(duration)
+
+        -- Save to disk
+        ZerosRaveReactor.SaveSongLibrary()
+
+        -- Broadcast update to all clients
+        ZerosRaveReactor.BroadcastLibraryUpdate()
+
+        print("[Party Radio] Updated duration for '" .. song.name .. "': " .. song.duration .. "s")
+        return true, song.duration
+    end
+
+    -- Duration already known, return existing value
+    return true, song.duration
+end
+
+-- Edit song metadata in library (SuperAdmin only)
+function ZerosRaveReactor.EditSongInLibrary(hash, name, artist, genre, ply)
+    local hashStr = tostring(hash)
+
+    -- Check if song exists
+    if not ZerosRaveReactor.SongLibrary[hashStr] then
+        return false, "Song not found in library"
+    end
+
+    -- Check if player is SuperAdmin
+    if IsValid(ply) and not ply:IsSuperAdmin() then
+        return false, "Only SuperAdmins can edit songs"
+    end
+
+    local song = ZerosRaveReactor.SongLibrary[hashStr]
+
+    -- Update song data (sanitize strings)
+    if name and name ~= "" then
+        song.name = string.sub(name, 1, 100)
+    end
+
+    if artist and artist ~= "" then
+        song.artist = string.sub(artist, 1, 100)
+    end
+
+    if genre and genre ~= "" then
+        song.genre = string.sub(genre, 1, 50)
+    end
+
+    -- Save immediately
+    ZerosRaveReactor.SaveSongLibrary()
+
+    -- Broadcast update to all clients
+    ZerosRaveReactor.BroadcastLibraryUpdate()
+
+    print("[Party Radio] Edited song: " .. song.name)
     return true
 end
 

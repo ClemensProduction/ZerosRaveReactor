@@ -171,22 +171,29 @@ function PANEL:CreateLibraryControls()
             end
         end):SetIcon("icon16/add.png")
 
-        -- Only show remove option for custom songs and SuperAdmin
-        if not song.isDefault and LocalPlayer():IsSuperAdmin() then
+        -- SuperAdmin-only options
+        if LocalPlayer():IsSuperAdmin() then
             menu:AddSpacer()
 
-            menu:AddOption("Remove from Library", function()
-                Derma_Query(
-                    "Are you sure you want to remove '" .. song.name .. "' from the library?\nThis will permanently delete it!",
-                    "Confirm Removal",
-                    "Yes", function()
-                        net.Start("PartyRadio_RemoveFromLibrary")
-                        net.WriteString(hash)
-                        net.SendToServer()
-                    end,
-                    "No"
-                )
-            end):SetIcon("icon16/delete.png")
+            menu:AddOption("Edit Song", function()
+                self:OpenEditSongDialog(hash, song)
+            end):SetIcon("icon16/pencil.png")
+
+            -- Only show remove option for custom songs
+            if not song.isDefault then
+                menu:AddOption("Remove from Library", function()
+                    Derma_Query(
+                        "Are you sure you want to remove '" .. song.name .. "' from the library?\nThis will permanently delete it!",
+                        "Confirm Removal",
+                        "Yes", function()
+                            net.Start("PartyRadio_RemoveFromLibrary")
+                            net.WriteString(hash)
+                            net.SendToServer()
+                        end,
+                        "No"
+                    )
+                end):SetIcon("icon16/delete.png")
+            end
         end
 
         menu:Open()
@@ -681,6 +688,92 @@ function PANEL:RefreshLibraryView()
 			end
 		end
         -- line:SetColumnColor(0, songColor)
+    end
+end
+
+function PANEL:OpenEditSongDialog(hash, song)
+    -- Create edit dialog
+    local frame = vgui.Create("DFrame")
+    frame:SetSize(400, 250)
+    frame:SetTitle("Edit Song - " .. song.name)
+    frame:Center()
+    frame:MakePopup()
+    frame:SetDraggable(true)
+    frame:ShowCloseButton(true)
+
+    local container = vgui.Create("DPanel", frame)
+    container:Dock(FILL)
+    container:DockMargin(10, 10, 10, 10)
+    container.Paint = function(s, w, h)
+        draw.RoundedBox(4, 0, 0, w, h, Color(40, 40, 40))
+    end
+
+    -- Song Name
+    local nameLabel = vgui.Create("DLabel", container)
+    nameLabel:SetText("Song Name:")
+    nameLabel:SetTextColor(Color(255, 255, 255))
+    nameLabel:Dock(TOP)
+    nameLabel:DockMargin(5, 5, 5, 5)
+
+    local nameEntry = vgui.Create("DTextEntry", container)
+    nameEntry:SetText(song.name)
+    nameEntry:Dock(TOP)
+    nameEntry:DockMargin(5, 0, 5, 10)
+
+    -- Artist
+    local artistLabel = vgui.Create("DLabel", container)
+    artistLabel:SetText("Artist:")
+    artistLabel:SetTextColor(Color(255, 255, 255))
+    artistLabel:Dock(TOP)
+    artistLabel:DockMargin(5, 0, 5, 5)
+
+    local artistEntry = vgui.Create("DTextEntry", container)
+    artistEntry:SetText(song.artist)
+    artistEntry:Dock(TOP)
+    artistEntry:DockMargin(5, 0, 5, 10)
+
+    -- Genre
+    local genreLabel = vgui.Create("DLabel", container)
+    genreLabel:SetText("Genre:")
+    genreLabel:SetTextColor(Color(255, 255, 255))
+    genreLabel:Dock(TOP)
+    genreLabel:DockMargin(5, 0, 5, 5)
+
+    local genreEntry = vgui.Create("DTextEntry", container)
+    genreEntry:SetText(song.genre)
+    genreEntry:Dock(TOP)
+    genreEntry:DockMargin(5, 0, 5, 10)
+
+    -- Save button
+    local saveButton = vgui.Create("DButton", container)
+    saveButton:SetText("Save Changes")
+    saveButton:SetTall(30)
+    saveButton:Dock(TOP)
+    saveButton:DockMargin(5, 10, 5, 5)
+    saveButton.DoClick = function()
+        local newName = string.Trim(nameEntry:GetValue())
+        local newArtist = string.Trim(artistEntry:GetValue())
+        local newGenre = string.Trim(genreEntry:GetValue())
+
+        -- Validation
+        if newName == "" then
+            Derma_Message("Song name cannot be empty!", "Error", "OK")
+            return
+        end
+
+        -- Send update to server
+        net.Start("PartyRadio_EditSongInLibrary")
+        net.WriteTable({
+            hash = hash,
+            name = newName,
+            artist = newArtist,
+            genre = newGenre
+        })
+        net.SendToServer()
+
+        notification.AddLegacy("Song updated!", NOTIFY_GENERIC, 3)
+        surface.PlaySound("buttons/button14.wav")
+        frame:Close()
     end
 end
 

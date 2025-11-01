@@ -718,24 +718,34 @@ end
 --[[
     Draw vocal ripples in 3D2D
 ]]
+-- Pre-allocate angle for better performance
+local vocalRippleAngle = Angle(0, 0, 0)
+local MAX_AGE_VOCAL = 2
+local INV_MAX_AGE_VOCAL = 1 / MAX_AGE_VOCAL
+
 function ENT:DrawVocalRipples()
-    if not self.VocalRipples then return end
+    if not self.VocalRipples or #self.VocalRipples == 0 then return end
 
-    for _, ripple in ipairs(self.VocalRipples) do
-        local age = CurTime() - ripple.startTime
-        local maxAge = 2
+    local curTime = CurTime()
 
-        if age < maxAge then
-            local progress = age / maxAge
+    for i = #self.VocalRipples, 1, -1 do
+        local ripple = self.VocalRipples[i]
+        local age = curTime - ripple.startTime
+
+        if age < MAX_AGE_VOCAL then
+            local progress = age * INV_MAX_AGE_VOCAL -- Multiply is faster than divide
             local radius = progress * 500
             local alpha = (1 - progress) * 255
+            local halfRadius = radius * 0.5
 
-            cam.Start3D2D(ripple.pos, Angle(0, 0, 0), 2)
+            cam.Start3D2D(ripple.pos, vocalRippleAngle, 2)
                 surface.SetDrawColor(ripple.color.r, ripple.color.g, ripple.color.b, alpha)
 				surface.SetMaterial(mat_ring_wave_additive)
-				surface.DrawTexturedRect(-radius/2,-radius/2,radius,radius)
-                --surface.DrawCircle(0, 0, radius, ripple.color)
+				surface.DrawTexturedRect(-halfRadius, -halfRadius, radius, radius)
             cam.End3D2D()
+        else
+            -- Remove expired ripples
+            table.remove(self.VocalRipples, i)
         end
     end
 end
@@ -743,34 +753,50 @@ end
 --[[
     Draw bassline groove waves on ground
 ]]
+-- Pre-allocate vectors and angles for better performance
+local grooveWaveOffset = Vector(0, 0, 5)
+local grooveWaveAngle = Angle(0, 0, 0)
+local MAX_AGE_GROOVE = 2
+local INV_MAX_AGE_GROOVE = 1 / MAX_AGE_GROOVE
+local MAX_RADIUS_GROOVE = 1500
+local INV_1000 = 0.001
+
+-- Pre-define pattern colors (RGB only, alpha set per-frame)
+local patternColors = {
+    default = {255, 100, 100},
+    slow_groove = {100, 100, 255},
+    fast_groove = {255, 255, 100},
+    rapid_groove = {255, 100, 255}
+}
+
 function ENT:DrawGrooveWaves()
-    if not self.GrooveWaves then return end
+    if not self.GrooveWaves or #self.GrooveWaves == 0 then return end
 
-    for i, wave in ipairs(self.GrooveWaves) do
-        local age = CurTime() - wave.startTime
-		local maxAge = 2
+    local curTime = CurTime()
+    local entPos = self:GetPos()
 
-		local progress = age / maxAge
+    for i = #self.GrooveWaves, 1, -1 do
+        local wave = self.GrooveWaves[i]
+        local age = curTime - wave.startTime
+
+		local progress = age * INV_MAX_AGE_GROOVE
 		local radius = progress * 1000
 
-        if radius > 1500 then table.remove(self.GrooveWaves,i) continue end
-
-        local alpha = (1 - radius / 1000) * 255 * wave.confidence
-
-        -- Color based on pattern type
-        local color = Color(255, 100, 100, alpha)
-        if wave.pattern == "slow_groove" then
-            color = Color(100, 100, 255, alpha)
-        elseif wave.pattern == "fast_groove" then
-            color = Color(255, 255, 100, alpha)
-        elseif wave.pattern == "rapid_groove" then
-            color = Color(255, 100, 255, alpha)
+        if radius > MAX_RADIUS_GROOVE then
+            table.remove(self.GrooveWaves, i)
+            continue
         end
 
-        cam.Start3D2D(self:GetPos() + Vector(0, 0, 5), Angle(0, 0, 0), 1)
-			surface.SetDrawColor(color.r, color.g, color.b,alpha)
+        local alpha = (1 - radius * INV_1000) * 255 * wave.confidence
+        local halfRadius = radius * 0.5
+
+        -- Get pattern color (avoid creating new Color objects)
+        local rgb = patternColors[wave.pattern] or patternColors.default
+
+        cam.Start3D2D(entPos + grooveWaveOffset, grooveWaveAngle, 1)
+			surface.SetDrawColor(rgb[1], rgb[2], rgb[3], alpha)
 			surface.SetMaterial(mat_ring_wave_additive)
-			surface.DrawTexturedRect(-radius/2,-radius/2,radius,radius)
+			surface.DrawTexturedRect(-halfRadius, -halfRadius, radius, radius)
         cam.End3D2D()
     end
 end
@@ -866,46 +892,66 @@ end
     Draw frequency spectrum display
     Shows FFT bands as bars above the radio
 ]]
+-- Pre-calculate frequency bar colors (done once, not per frame!)
+local frequencyBarColors = {}
+local function CacheFrequencyBarColors(numBands)
+    frequencyBarColors = {}
+    for i = 1, numBands do
+        local hue = (i / numBands) * 120
+        local color = HSVToColor(hue, 1, 1)
+        frequencyBarColors[i] = {color.r, color.g, color.b}
+    end
+end
+
+-- Box dimensions (constants)
+local FREQ_BAR_HEIGHT = 60
+local FREQ_BAR_WIDTH = 400
+local HALF_FREQ_HEIGHT = FREQ_BAR_HEIGHT * 0.5
+local HALF_FREQ_WIDTH = FREQ_BAR_WIDTH * 0.5
+
 function ENT:DrawFrequencyBars()
     if not self.FFTData or #self.FFTData == 0 then return end
 
-    -- Box size
-	local bh = 60
-	local bw = 400
+    local barCount = math.min(self.Config.FFT.Bands, #self.FFTData)
 
-    -- Current color
+    -- Cache colors if not already done or band count changed
+    if #frequencyBarColors ~= barCount then
+        CacheFrequencyBarColors(barCount)
+    end
+
+    local barWidth = FREQ_BAR_WIDTH / barCount
     local col = self.CurrentColor
 
-	cam.Start3D2D(self:LocalToWorld(Vector(-10 * self:GetModelScale(), 0, 5 * self:GetModelScale())), self:LocalToWorldAngles(Angle(0, -90, 90)), 0.1)
+    -- Cache scale to avoid repeated GetModelScale() calls
+    local modelScale = self:GetModelScale()
+    local pos = self:LocalToWorld(Vector(-10 * modelScale, 0, 5 * modelScale))
+    local ang = self:LocalToWorldAngles(Angle(0, -90, 90))
+
+	cam.Start3D2D(pos, ang, 0.1)
         -- Background
         surface.SetDrawColor(0, 0, 0, 200)
-        surface.DrawRect(-bw/2, -bh/2, bw, bh)
+        surface.DrawRect(-HALF_FREQ_WIDTH, -HALF_FREQ_HEIGHT, FREQ_BAR_WIDTH, FREQ_BAR_HEIGHT)
 
         -- Draw frequency bars
-        local barCount = math.min(self.Config.FFT.Bands, #self.FFTData)
-        local barWidth = 400 / barCount
-
         for i = 1, barCount do
-            local height = math.min(bh, (self.FFTNormalized[i] or 0) * bh)
-            local x = (-bw/2) + (i - 1) * barWidth
+            local height = math.min(FREQ_BAR_HEIGHT, (self.FFTNormalized[i] or 0) * FREQ_BAR_HEIGHT)
+            local x = -HALF_FREQ_WIDTH + (i - 1) * barWidth
 
-            -- Color based on frequency (low=red, high=blue)
-            local hue = (i / barCount) * 120
-            local color = HSVToColor(hue, 1, 1)
-
-            surface.SetDrawColor(color.r, color.g, color.b, 255)
-            surface.DrawRect(x, -bh / 2, barWidth - 2, height)
+            -- Use pre-calculated color
+            local rgb = frequencyBarColors[i]
+            surface.SetDrawColor(rgb[1], rgb[2], rgb[3], 255)
+            surface.DrawRect(x, -HALF_FREQ_HEIGHT, barWidth - 2, height)
         end
 
         -- Draw song info if available
         if self.CurrentSong then
-			draw.SimpleText(self.CurrentSong.artist or "Unknown", "DermaLarge", 0, -bh/2 + 5, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
-			draw.SimpleText(self.CurrentSong.name or "Unknown", "DermaDefault", 0, (bh/2) - 5, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM)
+			draw.SimpleText(self.CurrentSong.artist or "Unknown", "DermaLarge", 0, -HALF_FREQ_HEIGHT + 5, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
+			draw.SimpleText(self.CurrentSong.name or "Unknown", "DermaDefault", 0, HALF_FREQ_HEIGHT - 5, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM)
         end
 
         -- Outline Box
-    	surface.SetDrawColor( col.r, col.g, col.b, 255 )
-		surface.DrawOutlinedRect( -bw/2, -bh/2, bw, bh,1 )
+    	surface.SetDrawColor(col.r, col.g, col.b, 255)
+		surface.DrawOutlinedRect(-HALF_FREQ_WIDTH, -HALF_FREQ_HEIGHT, FREQ_BAR_WIDTH, FREQ_BAR_HEIGHT, 1)
 
     cam.End3D2D()
 end
