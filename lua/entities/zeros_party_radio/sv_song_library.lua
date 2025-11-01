@@ -70,7 +70,10 @@ function ZerosRaveReactor.LoadSongLibrary()
         local success, decoded = pcall(util.JSONToTable, data)
 
         if success and decoded then
-            ZerosRaveReactor.SongLibrary = decoded
+            ZerosRaveReactor.SongLibrary = {}
+			for k,v in pairs(decoded) do
+				ZerosRaveReactor.SongLibrary[tostring(k)] = v
+			end
             return true
         else
             print("[Party Radio] ERROR: Failed to decode song library JSON")
@@ -129,11 +132,6 @@ function ZerosRaveReactor.AddSongToLibrary(url, name, artist, genre, playerSteam
 
     print("[Party Radio] Added song to library: " .. name .. " by " .. artist)
     return true, hashStr
-end
-
--- Get song by hash
-function ZerosRaveReactor.GetSongByHash(hash)
-	return ZerosRaveReactor.SongLibrary[tostring(hash)]
 end
 
 -- Update song duration in library

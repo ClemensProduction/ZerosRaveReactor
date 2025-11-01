@@ -561,7 +561,7 @@ function ENT:OnTrebleUpdate(intensity)
     cam.End3D2D()
 
 
-    if intensity <= 0.05 then return end
+    -- if intensity <= 0.05 then return end
 
     -- Disable depth testing for close range
     --cam.IgnoreZ(dist < 1000)
