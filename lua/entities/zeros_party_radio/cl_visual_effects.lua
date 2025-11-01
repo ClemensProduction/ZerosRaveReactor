@@ -955,7 +955,7 @@ function ENT:DrawBeatIndicator()
 	if not self.BeatTracker then return end
 
 	local scale = 0.5
-	local sw,sh = ScrW(),ScrH()
+	local sw = ScrW()
 	local w,h = 600 * scale,300 * scale
 	local gap = 10 * scale
 	local x,y = sw - w - gap, gap
@@ -998,7 +998,7 @@ end
 ]]
 function ENT:DrawDebugInfo()
 	local scale = 0.5
-	local sw,sh = ScrW(),ScrH()
+	local sw = ScrW()
 	local w,h = 600 * scale,1090 * scale
 	local gap = 10 * scale
 	local x,y = sw - w - gap, gap * 2 + 300 * scale
