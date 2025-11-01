@@ -39,7 +39,9 @@ local rateLimiters = {
     SetVolume = CreateRateLimiter(0.5),
     AddToLibrary = CreateRateLimiter(3),
     RemoveFromLibrary = CreateRateLimiter(2),
-    AddFromLibrary = CreateRateLimiter(1)
+    AddFromLibrary = CreateRateLimiter(1),
+    ReportDuration = CreateRateLimiter(2),
+    SongEnded = CreateRateLimiter(1)
 }
 
 function ENT:SpawnFunction(ply, tr, name)
@@ -114,6 +116,8 @@ util.AddNetworkString("PartyRadio_UpdateSongLibrary")
 util.AddNetworkString("PartyRadio_AddToLibrary")
 util.AddNetworkString("PartyRadio_RemoveFromLibrary")
 util.AddNetworkString("PartyRadio_AddFromLibrary")
+util.AddNetworkString("PartyRadio_ReportDuration")
+util.AddNetworkString("PartyRadio_SongEnded")
 
 function ENT:OpenMenu(ply)
     if not IsValid(ply) or not ply:IsPlayer() then return end
@@ -157,6 +161,17 @@ function ENT:PlaySong(index)
     self.CurrentIndex = index
     self.IsPlaying = true
 
+    -- Clear any existing auto-play timer
+    self:ClearAutoPlayTimer()
+
+    -- Try to schedule next song if duration is known
+    if song.hash then
+        local librarySong = ZerosRaveReactor.GetSongByHash(song.hash)
+        if librarySong and librarySong.duration and librarySong.duration > 0 then
+            self:ScheduleNextSong(librarySong.duration)
+        end
+    end
+
     net.Start("PartyRadio_PlayNext")
     net.WriteEntity(self)
     net.WriteTable(song)
@@ -169,11 +184,37 @@ end
 function ENT:StopPlayback()
     self.IsPlaying = false
 
+    -- Clear auto-play timer
+    self:ClearAutoPlayTimer()
+
     net.Start("PartyRadio_Stop")
     net.WriteEntity(self)
     net.Broadcast()
 
     self:BroadcastState()
+end
+
+function ENT:ScheduleNextSong(duration)
+    -- Add 1 second buffer to ensure song has finished
+    local delay = duration + 1
+
+    local timerName = "PartyRadio_AutoNext_" .. self:EntIndex()
+
+    timer.Create(timerName, delay, 1, function()
+        if IsValid(self) and self.IsPlaying then
+            print("[Party Radio] Auto-playing next song after " .. duration .. "s")
+            self:PlayNext()
+        end
+    end)
+
+    print("[Party Radio] Scheduled next song in " .. delay .. " seconds")
+end
+
+function ENT:ClearAutoPlayTimer()
+    local timerName = "PartyRadio_AutoNext_" .. self:EntIndex()
+    if timer.Exists(timerName) then
+        timer.Remove(timerName)
+    end
 end
 
 function ENT:PlayNext()
@@ -450,5 +491,53 @@ net.Receive("PartyRadio_AddFromLibrary", function(len, ply)
         ply:ChatPrint("Failed to add song to playlist: " .. (err or "Unknown error"))
     else
         ply:ChatPrint("Song added to playlist!")
+    end
+end)
+
+-- Client reports song duration (for auto-play scheduling)
+net.Receive("PartyRadio_ReportDuration", function(len, ply)
+    -- Security checks
+    if not IsValid(ply) or not ply:IsPlayer() then return end
+    if not rateLimiters.ReportDuration(ply) then return end
+
+    local ent = net.ReadEntity()
+    if not IsValid(ent) or ent:GetClass() ~= "zeros_party_radio" then return end
+
+    -- Only accept from players within range of the radio
+    if ent:GetPos():Distance(ply:GetPos()) > ent.Range then return end
+
+    local hash = net.ReadString()
+    local duration = net.ReadFloat()
+
+    -- Update duration in library and schedule next song
+    local success, actualDuration = ZerosRaveReactor.UpdateSongDuration(hash, duration)
+
+    if success and actualDuration then
+        -- If this is the currently playing song and we don't have a timer yet, schedule it
+        if ent.IsPlaying and ent.Playlist[ent.CurrentIndex] and ent.Playlist[ent.CurrentIndex].hash == hash then
+            local timerName = "PartyRadio_AutoNext_" .. ent:EntIndex()
+            if not timer.Exists(timerName) then
+                ent:ScheduleNextSong(actualDuration)
+            end
+        end
+    end
+end)
+
+-- Client notifies server that song has ended (fallback/verification)
+net.Receive("PartyRadio_SongEnded", function(len, ply)
+    -- Security checks
+    if not IsValid(ply) or not ply:IsPlayer() then return end
+    if not rateLimiters.SongEnded(ply) then return end
+
+    local ent = net.ReadEntity()
+    if not IsValid(ent) or ent:GetClass() ~= "zeros_party_radio" then return end
+
+    -- Only accept from players within range of the radio
+    if ent:GetPos():Distance(ply:GetPos()) > ent.Range then return end
+
+    -- If radio is still marked as playing, trigger next song
+    if ent.IsPlaying then
+        print("[Party Radio] Song ended notification from client, playing next")
+        ent:PlayNext()
     end
 end)
