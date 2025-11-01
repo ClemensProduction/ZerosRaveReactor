@@ -140,10 +140,44 @@ function ZerosRaveReactor.RemoveSongFromLibrary(hash, ply)
         return false, "Song not found in library"
     end
 
-    -- Check if it's a default song
-    local song = ZerosRaveReactor.SongLibrary[hashStr]
-    if song.isDefault then
-        return false, "Cannot remove default songs from library"
+    -- Update song duration in library
+    function ZerosRaveReactor.UpdateSongDuration(hash, duration)
+        local hashStr = tostring(hash)
+
+        -- Check if song exists
+        if not ZerosRaveReactor.SongLibrary[hashStr] then
+            return false, "Song not found in library"
+        end
+
+        -- Validate duration (must be between 1 second and 2 hours)
+        duration = tonumber(duration) or 0
+        if duration < 1 or duration > 7200 then
+            return false, "Invalid duration"
+        end
+
+        local song = ZerosRaveReactor.SongLibrary[hashStr]
+
+        -- Only update if duration is not already set (first report wins)
+        if not song.duration or song.duration == 0 then
+            song.duration = math.Round(duration)
+
+            -- Save to disk
+            ZerosRaveReactor.SaveSongLibrary()
+
+            -- Broadcast update to all clients
+            ZerosRaveReactor.BroadcastLibraryUpdate()
+
+            print("[Party Radio] Updated duration for '" .. song.name .. "': " .. song.duration .. "s")
+            return true, song.duration
+        end
+
+        -- Duration already known, return existing value
+        return true, song.duration
+    end
+
+    -- Get song by hash
+    function ZerosRaveReactor.GetSongByHash(hash)
+        return ZerosRaveReactor.SongLibrary[tostring(hash)]
     end
 
     -- Check if player is SuperAdmin

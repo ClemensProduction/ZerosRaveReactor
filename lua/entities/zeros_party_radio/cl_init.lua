@@ -145,7 +145,9 @@ end
 ]]
 function ENT:OnRemove()
     self:StopMusic()
+    -- Clean up any remaining timers (StopMusic already does this, but being thorough)
     timer.Remove("PartyRadio_NextSong_" .. self:EntIndex())
+    timer.Remove("PartyRadio_SongEnd_" .. self:EntIndex())
 end
 
 -- ============================================
@@ -161,7 +163,10 @@ function ENT:StopMusic()
         self.SoundChannel = nil
     end
     self.IsPlaying = false
+
+    -- Clean up timers
     timer.Remove("PartyRadio_NextSong_" .. self:EntIndex())
+    timer.Remove("PartyRadio_SongEnd_" .. self:EntIndex())
 end
 
 --[[
@@ -200,7 +205,9 @@ function ENT:PlaySound(url)
         self.SoundChannel = channel
         self.IsPlaying = true
 
-		ZerosRaveReactor.FileDuration[url] = math.Round(channel:GetLength())
+        -- Store duration and report to server
+        local duration = channel:GetLength()
+        ZerosRaveReactor.FileDuration[url] = math.Round(duration)
 
         channel:SetPos(self:GetPos())
         channel:Set3DEnabled(true)
@@ -212,18 +219,26 @@ function ENT:PlaySound(url)
         -- This ensures accurate detection regardless of audio source quality
         self:RecalculateFrequencyBands()
 
-		/*
-        local length = channel:GetLength()
-        if length > 0 then
-            timer.Create("PartyRadio_NextSong_" .. self:EntIndex(), length, 1, function()
-                if IsValid(self) then
-                    net.Start("PartyRadio_PlayNext")
+        -- Report duration to server if we have a hash for this song
+        if self.CurrentSong and self.CurrentSong.hash and duration > 0 then
+            net.Start("PartyRadio_ReportDuration")
+            net.WriteEntity(self)
+            net.WriteString(tostring(self.CurrentSong.hash))
+            net.WriteFloat(duration)
+            net.SendToServer()
+        end
+
+        -- Set up timer to notify server when song ends (fallback mechanism)
+        if duration > 0 then
+            local timerName = "PartyRadio_SongEnd_" .. self:EntIndex()
+            timer.Create(timerName, duration + 0.5, 1, function()
+                if IsValid(self) and self.IsPlaying then
+                    net.Start("PartyRadio_SongEnded")
                     net.WriteEntity(self)
                     net.SendToServer()
                 end
             end)
         end
-		*/
     end)
 end
 
