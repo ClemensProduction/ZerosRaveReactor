@@ -68,8 +68,10 @@ local mat_beam02 = Material("sprites/bluelaser1")
     Makes overlapping colors brighter instead of darker
     @param call: Function to execute with additive blending
 ]]
+local BlendAdd
 local function BlendAdditive(call)
-    zclib.Blendmodes.Blend("Additive", false, call)
+	if not BlendAdd then BlendAdd = zclib.Blendmodes.Blend return end
+    BlendAdd("Additive", false, call)
 end
 
 --[[
@@ -335,6 +337,8 @@ end
 ]]
 function ENT:CreateBuildUpEffect(intensity)
     local pos = self:GetPos()
+	local TinyBurst = {"zpc2_burst_tiny_green","zpc2_burst_tiny_blue","zpc2_burst_tiny_orange","zpc2_burst_tiny_red","zpc2_burst_tiny_violett","zpc2_burst_tiny_white","zpc2_burst_tiny_pink","zpc2_burst_tiny_cyan"}
+	local eff = TinyBurst[math.random(#TinyBurst)]
 
     -- Create rising particles around the radio
     local particleCount = math.Clamp(math.floor(5 + intensity * 100),12,120)
@@ -345,7 +349,7 @@ function ENT:CreateBuildUpEffect(intensity)
 		local particlePos = pos + Vector(math.cos(angle) * radius, math.sin(angle) * radius, 0)
 
         -- Use existing particle effect
-        ParticleEffect("zpc2_burst_tiny_orange", particlePos, Angle(0, 0, 0), nil)
+        ParticleEffect(eff, particlePos, Angle(0, 0, 0), nil)
     end
 
     -- Store build-up data for rendering
@@ -374,8 +378,8 @@ function ENT:CreateDropEffect(intensity)
     -- Big explosion effect
     ParticleEffect(effect02, pos, Angle(0, 0, 0), nil)
 
-	local pos02 = self.PartyCenter + self:GetUp() * 700 + self:GetRight() * math.random(-100,100) + self:GetForward() * math.random(-100,100)
-	-- ParticleEffect("radio_speaker_beat0" .. math.random(3,5), pos02, Angle(0, 0, 0), nil)
+	--local pos02 = self.PartyCenter + self:GetUp() * 700 + self:GetRight() * math.random(-100,100) + self:GetForward() * math.random(-100,100)
+	--ParticleEffect("zld_speaker_beat01", pos02, Angle(0, 0, 0), nil)
 
     self:CreateCircularParticles(self.PartyCenter, Effect_SparkTower[math.random(#Effect_SparkTower)], self.PartyRadius, 12, self.PartyHeight, 0,90)
 
@@ -500,13 +504,17 @@ end
 function ENT:OnBassUpdate(intensity)
     if intensity <= 0.2 then return end
 
-    local glow_col = Color(self.fft_col01.r, self.fft_col01.g, self.fft_col01.b, 50)
+	if not self.GlowColor02 then self.GlowColor02 = Color(self.fft_col01.r, self.fft_col01.g, self.fft_col01.b, 255 * self.VisualIntensity) end
+	self.GlowColor02.r = self.fft_col01.r
+	self.GlowColor02.g = self.fft_col01.g
+	self.GlowColor02.b = self.fft_col01.b
+	self.GlowColor02.a = 255 * self.VisualIntensity
 
     -- Draw ground rings
 	cam.Start3D2D(self:LocalToWorld(Vector(0, 0, 2)), self:LocalToWorldAngles(Angle(0, 0, 0)), math.Clamp(self.fft_scale, 0.4, 50))
         -- Background glow
         surface.SetMaterial(radial_shadow)
-        surface.SetDrawColor(glow_col)
+        surface.SetDrawColor(self.GlowColor02)
         surface.DrawTexturedRectRotated(0, 0, 500, 500, 0)
 
         -- Rotating rings
@@ -533,11 +541,19 @@ end
     Creates floating rings above the radio
     @param intensity: Treble intensity (0-1)
 ]]
+local col_white_01 = Color(255,255,255,150)
 function ENT:OnTrebleUpdate(intensity)
 	if not self.PartyCenter then return end
 
-	local glow_col = Color(self.fft_col02.r, self.fft_col02.g, self.fft_col02.b, 50)
-	local dist = self:GetListenerDistance()
+	-- if intensity <= 0.05 then return end
+
+	if not self.GlowColor01 then self.GlowColor01 = Color(self.fft_col02.r, self.fft_col02.g, self.fft_col02.b, 255 * self.VisualIntensity) end
+	self.GlowColor01.r = self.fft_col02.r
+	self.GlowColor01.g = self.fft_col02.g
+	self.GlowColor01.b = self.fft_col02.b
+	self.GlowColor01.a = 255 * self.VisualIntensity
+
+	-- local dist = self:GetListenerDistance()
 
 	render.SetMaterial(laser)
 	render.DrawBeam(self:GetPos(), self.PartyCenter, 500 * self.VisualIntensity, 0, 0, self.fft_col02)
@@ -547,7 +563,7 @@ function ENT:OnTrebleUpdate(intensity)
 
 
 	render.SetMaterial(laser)
-	render.DrawBeam(self:GetPos(), self.PartyCenter, 250 * self.VisualIntensity, 0, 0, Color(255,255,255,150))
+	render.DrawBeam(self:GetPos(), self.PartyCenter, 250 * self.VisualIntensity, 0, 0, col_white_01)
 
 
 	cam.Start3D2D(self.PartyCenter, self.LocalViewAng or angle_zero, self.fft_scale)
@@ -560,15 +576,12 @@ function ENT:OnTrebleUpdate(intensity)
 		surface.DrawTexturedRectRotated(0, 0, 100, 100, 0)
     cam.End3D2D()
 
-
-    -- if intensity <= 0.05 then return end
-
     -- Disable depth testing for close range
     --cam.IgnoreZ(dist < 1000)
 	cam.Start3D2D(self:LocalToWorld(Vector(0, 0, 2)), self.LocalViewAng or angle_zero, self.fft_scale)
         -- Background glow
         surface.SetMaterial(radial_shadow)
-        surface.SetDrawColor(glow_col)
+        surface.SetDrawColor(self.GlowColor01)
         surface.DrawTexturedRectRotated(0, 0, 300, 300, 0)
 
         -- Epic moment rings
@@ -585,7 +598,7 @@ function ENT:OnTrebleUpdate(intensity)
 	cam.Start3D2D(self.PartyCenter, self.LocalViewAng or angle_zero, self.VisualIntensity)
 		-- Background glow
 		surface.SetMaterial(radial_shadow)
-		surface.SetDrawColor(glow_col)
+		surface.SetDrawColor(self.GlowColor01)
 		surface.DrawTexturedRectRotated(0, 0, 700, 700, 0)
 	cam.End3D2D()
 end
@@ -870,17 +883,18 @@ function ENT:DrawFrequencyBars()
     if not self.FFTData or #self.FFTData == 0 then return end
 
     -- Box size
-	local bh = 60
-	local bw = 400
+	local bh = 80
+	local bw = 300
 
     -- Current color
     local col = self.CurrentColor
 
-	cam.Start3D2D(self:LocalToWorld(Vector(-10 * self:GetModelScale(), 0, 5 * self:GetModelScale())), self:LocalToWorldAngles(Angle(0, -90, 90)), 0.1)
+	cam.Start3D2D(self:LocalToWorld(Vector(-10 * self:GetModelScale(), 0, 5 * self:GetModelScale())), self:LocalToWorldAngles(Angle(0, -90, 90)), 0.2)
         -- Background
         surface.SetDrawColor(0, 0, 0, 200)
         surface.DrawRect(-bw/2, -bh/2, bw, bh)
 
+		/*
         -- Draw frequency bars
         local barCount = math.min(self.Config.FFT.Bands, #self.FFTData)
         local barWidth = 400 / barCount
@@ -896,11 +910,12 @@ function ENT:DrawFrequencyBars()
             surface.SetDrawColor(color.r, color.g, color.b, 255)
             surface.DrawRect(x, -bh / 2, barWidth - 2, height)
         end
+		*/
 
         -- Draw song info if available
         if self.CurrentSong then
-			draw.SimpleText(self.CurrentSong.artist or "Unknown", "DermaLarge", 0, -bh/2 + 5, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
-			draw.SimpleText(self.CurrentSong.name or "Unknown", "DermaDefault", 0, (bh/2) - 5, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM)
+			draw.SimpleText(self.CurrentSong.name or "Unknown", "Trebuchet24", 0, -bh/2 + 10, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
+			draw.SimpleText(self.CurrentSong.artist or "Unknown", "Trebuchet24", 0, (bh/2) - 10, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_BOTTOM)
         end
 
         -- Outline Box

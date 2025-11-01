@@ -185,7 +185,7 @@ function ENT:PlaySound(url)
     self.CurrentMaxEnergy = 0.01
     self.FluxHistory = {Kick = {}, Snare = {}, HiHat = {}, Clap = {}}
     self.BeatHistory = {}
-    self.CalibrationEndTime = CurTime() + 5  -- 5-second calibration period
+    self.CalibrationEndTime = CurTime() + 1  -- 1-second calibration period
 
     -- Reset vocal tracker for new song calibration
     self.VocalTracker = nil
@@ -211,7 +211,7 @@ function ENT:PlaySound(url)
 
         channel:SetPos(self:GetPos())
         channel:Set3DEnabled(true)
-        channel:Set3DFadeDistance(1200, 2500)
+        channel:Set3DFadeDistance(2000, 4000)
         channel:SetVolume(self.Volume)
         channel:Play()
 
@@ -276,9 +276,10 @@ function ENT:Think()
 	self.SmoothIntensity = Lerp(FrameTime() * 0.5,self.SmoothIntensity or 0,self.VisualIntensity)
 	self.SmoothVocalEnergyIntensity = Lerp(FrameTime() * 0.5,self.SmoothVocalEnergyIntensity or 0,(self.VocalEnergySmooth or 0) * 10)
 
-	if self.VocalEnergySmooth and self.VocalEnergySmooth > 0 then
+	if self.VocalEnergySmooth and self.VocalEnergySmooth > 0 and self.VisualIntensity > 0.1 and self.CurrentTransitionState == "building" then
 
-		self.HeightIntensity = Lerp(FrameTime() * 0.5,self.HeightIntensity or 0,self.SmoothVocalEnergyIntensity > 0.5 and 2 or 0)
+		--self.HeightIntensity = Lerp(FrameTime() * 0.5,self.HeightIntensity or 0,self.SmoothVocalEnergyIntensity > 0.5 and 2 or 0)
+		self.HeightIntensity = Lerp(FrameTime() * 0.5,self.HeightIntensity or 0,(self.VisualIntensity * 2) + (self.VocalEnergySmooth * 2))
 
 		local sin = math.sin(CurTime())
 		local cos = math.cos(CurTime())
@@ -303,8 +304,8 @@ function ENT:Think()
 
 	    -- Trigger extra particles during intense moments
 	    if ( not self.NextBeat or CurTime() > self.NextBeat) then
-			self.NextBeat = CurTime() + 0.1
-	        -- self:CreateCircularParticles(center, "radio_speaker_beat02", radius, numParticles, -height, 0)
+			self.NextBeat = CurTime() + 0.01
+	        self:CreateCircularParticles(center, "zld_speaker_beat01", radius, numParticles, -height, 0,-90)
 	    end
 	end
 
@@ -351,7 +352,7 @@ function ENT:DrawTranslucent()
 		-- Draw advanced detection visuals
 		self:DrawGrooveWaves()
 		self:DrawVocalRipples()
-		self:DrawTransitionEffects()
+		-- self:DrawTransitionEffects()
     end
 
 	if self.LODLevel == 0 then
