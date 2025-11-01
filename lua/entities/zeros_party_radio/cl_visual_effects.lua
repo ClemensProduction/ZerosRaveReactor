@@ -673,18 +673,30 @@ function ENT:OnVolumeUpdate(intensity)
         self.rot_speed_smooth = Lerp(FrameTime() * 0.5, self.rot_speed_smooth or 0, self.rot_speed_target)
         self:SetRenderAngles(self:LocalToWorldAngles(Angle(0, self.rot_speed_smooth, 0)))
 
-        -- Set animation
-        if self:LookupSequence("menu_walk") ~= -1 then
-            self:SetSequence("menu_walk")
-            self.AnimCycle = (self.AnimCycle or 0) + FrameTime()
-            if self.AnimCycle > 1 then self.AnimCycle = 0 end
-            self:SetCycle(self.AnimCycle)
-        elseif self:LookupSequence("taunt_salute") ~= -1 then
-            self:SetSequence("taunt_salute")
-            self.AnimCycle = (self.AnimCycle or 0) + FrameTime()
-            if self.AnimCycle > 1 then self.AnimCycle = 0 end
-            self:SetCycle(self.AnimCycle)
-        end
+		-- Set animation
+		if self.SmoothIntensity > 0.38 then
+			if self:LookupSequence("flossdance") ~= -1 then
+				self:SetSequence("flossdance")
+				self.AnimCycle = (self.AnimCycle or 0) + FrameTime() * self.SmoothIntensity * 0.5
+
+				if self.AnimCycle > 1 then
+					self.AnimCycle = 0
+				end
+
+				self:SetCycle(self.AnimCycle)
+			end
+		else
+			if self:LookupSequence("menu_walk") ~= -1 then
+				self:SetSequence("menu_walk")
+				self.AnimCycle = (self.AnimCycle or 0) + FrameTime()
+
+				if self.AnimCycle > 1 then
+					self.AnimCycle = 0
+				end
+
+				self:SetCycle(self.AnimCycle)
+			end
+		end
 
         -- Scale model to fit
         local min, max = self:GetRenderBounds()

@@ -158,7 +158,7 @@ end
     Stop music playback and clean up audio resources
 ]]
 function ENT:StopMusic()
-    if IsValid(self.SoundChannel) then
+    if self.SoundChannel and self.SoundChannel:IsValid() then
         self.SoundChannel:Stop()
         self.SoundChannel = nil
     end
@@ -275,11 +275,12 @@ function ENT:Think()
 
 	self.SmoothIntensity = Lerp(FrameTime() * 0.5,self.SmoothIntensity or 0,self.VisualIntensity)
 	self.SmoothVocalEnergyIntensity = Lerp(FrameTime() * 0.5,self.SmoothVocalEnergyIntensity or 0,(self.VocalEnergySmooth or 0) * 10)
+	self.SmoothTempo = Lerp(FrameTime() * 0.5,self.SmoothTempo or 0,self.fft_tempo_avg or 0)
 
 	if self.VocalEnergySmooth and self.VocalEnergySmooth > 0 and self.VisualIntensity > 0.1 and self.CurrentTransitionState == "building" then
 
 		--self.HeightIntensity = Lerp(FrameTime() * 0.5,self.HeightIntensity or 0,self.SmoothVocalEnergyIntensity > 0.5 and 2 or 0)
-		self.HeightIntensity = Lerp(FrameTime() * 0.5,self.HeightIntensity or 0,(self.VisualIntensity * 2) + (self.VocalEnergySmooth * 2))
+		self.HeightIntensity = Lerp(FrameTime() * 0.5,self.HeightIntensity or 0,(self.SmoothIntensity * 1) + (self.VocalEnergySmooth * 1))
 
 		local sin = math.sin(CurTime())
 		local cos = math.cos(CurTime())
@@ -295,7 +296,9 @@ function ENT:Think()
 
 		local numParticles = 12
 
-		local height = (100 * vocal) + (math.abs(100 * cos) * self.HeightIntensity)
+		-- local height = (100 * vocal) + (math.abs(100 * cos) * self.HeightIntensity)
+        local height = (100 * vocal) + (100 * cos) + (300 * self.HeightIntensity)
+		height = height * self.SmoothTempo
 
 		local center = self:LocalToWorld( Vector(0, 0,  radius + height) )
 		self.PartyCenter = center
