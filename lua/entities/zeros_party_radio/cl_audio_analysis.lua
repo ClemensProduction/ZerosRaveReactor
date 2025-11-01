@@ -230,7 +230,7 @@ function ENT:AnalyzeFFT()
     -- Fast songs: ~0.3-0.5s between beats (120-200 BPM)
     -- Slow songs: ~1.0-2.0s between beats (30-60 BPM)
     -- We invert the interval and clamp to 0-1 range
-    local minInterval = 0.3  -- Very fast (200 BPM)
+    local minInterval = 0.01  -- Very fast (200 BPM)
     local maxInterval = 2.0  -- Very slow (30 BPM)
 
     -- Invert and normalize: smaller interval = higher tempo value

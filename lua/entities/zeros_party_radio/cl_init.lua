@@ -279,11 +279,11 @@ function ENT:Think()
     -- OPTIMIZATION: Batch lerp calculations
 	self.SmoothIntensity = Lerp(ft * 0.5, self.SmoothIntensity or 0, self.VisualIntensity)
 	self.SmoothVocalEnergyIntensity = Lerp(ft * 0.5, self.SmoothVocalEnergyIntensity or 0, (self.VocalEnergySmooth or 0) * 10)
-	self.SmoothTempo = Lerp(ft * 0.5, self.SmoothTempo or 0, self.fft_tempo_avg or 0)
+	self.SmoothTempo = Lerp(ft * 0.5, self.SmoothTempo or 0, self.TempoNormalized or 0)
 
     -- OPTIMIZATION: Only calculate party effects if conditions are met
 	if self.VocalEnergySmooth and self.VocalEnergySmooth > 0 and self.VisualIntensity > 0.1 and self.CurrentTransitionState == "building" then
-		self.HeightIntensity = Lerp(ft * 0.5, self.HeightIntensity or 0, (self.SmoothIntensity * 1) + (self.VocalEnergySmooth * 1))
+		self.HeightIntensity = Lerp(ft * 0.5, self.HeightIntensity or 0, (self.SmoothIntensity * 2) + (self.VocalEnergySmooth * 2))
 
         -- OPTIMIZATION: Cache trig values
 		local curTime = CurTime()
@@ -301,7 +301,7 @@ function ENT:Think()
 		local numParticles = 12
 
         local height = (100 * vocal) + (100 * cos) + (300 * self.HeightIntensity)
-		height = height * self.SmoothTempo
+		-- height = height * self.SmoothTempo
 
 		local center = self:LocalToWorld(Vector(0, 0, radius + height))
 		self.PartyCenter = center
@@ -346,12 +346,15 @@ function ENT:DrawTranslucent()
         self.LODLevel = 0 -- Full detail
     end
 
+	/*
     -- OPTIMIZATION: Only update FFT analysis at configured rate (not every frame!)
     local curTime = CurTime()
     if not self.NextUpdateTime or curTime >= self.NextUpdateTime then
-        self.NextUpdateTime = curTime + self.Config.Performance.UpdateRate
+        self.NextUpdateTime = curTime + 0.3 --self.Config.Performance.UpdateRate
         self:AnalyzeFFT()
     end
+	*/
+	self:AnalyzeFFT()
 
     -- OPTIMIZATION: Cache view angle calculation
     self.LocalViewAng = Angle(90, ply:EyeAngles().y - 90, 90)

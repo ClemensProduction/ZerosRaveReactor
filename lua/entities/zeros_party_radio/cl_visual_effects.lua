@@ -511,12 +511,12 @@ function ENT:OnBassUpdate(intensity)
 
     -- OPTIMIZATION: Reuse color object instead of creating new one
 	if not self.GlowColor02 then
-        self.GlowColor02 = Color(self.fft_col01.r, self.fft_col01.g, self.fft_col01.b, 255 * self.VisualIntensity)
+        self.GlowColor02 = Color(self.fft_col01.r, self.fft_col01.g, self.fft_col01.b, 255 * self.SmoothIntensity)
     else
         self.GlowColor02.r = self.fft_col01.r
         self.GlowColor02.g = self.fft_col01.g
         self.GlowColor02.b = self.fft_col01.b
-        self.GlowColor02.a = 255 * self.VisualIntensity
+        self.GlowColor02.a = 255 * self.SmoothIntensity
     end
 
     -- OPTIMIZATION: Cache LocalToWorld calculations
@@ -561,12 +561,12 @@ function ENT:OnTrebleUpdate(intensity)
 
     -- OPTIMIZATION: Reuse color object
 	if not self.GlowColor01 then
-        self.GlowColor01 = Color(self.fft_col02.r, self.fft_col02.g, self.fft_col02.b, 255 * self.VisualIntensity)
+        self.GlowColor01 = Color(self.fft_col02.r, self.fft_col02.g, self.fft_col02.b, 255 * self.SmoothIntensity)
     else
         self.GlowColor01.r = self.fft_col02.r
         self.GlowColor01.g = self.fft_col02.g
         self.GlowColor01.b = self.fft_col02.b
-        self.GlowColor01.a = 255 * self.VisualIntensity
+        self.GlowColor01.a = 255 * self.SmoothIntensity
     end
 
     -- OPTIMIZATION: Cache common values
@@ -685,7 +685,7 @@ function ENT:OnVolumeUpdate(intensity)
         self:SetRenderAngles(self:LocalToWorldAngles(Angle(0, self.rot_speed_smooth, 0)))
 
 		-- Set animation
-		if self.SmoothIntensity > 0.38 then
+		if self.SmoothIntensity > 0.25 then
 			if self:LookupSequence("flossdance") ~= -1 then
 				self:SetSequence("flossdance")
 				self.AnimCycle = (self.AnimCycle or 0) + FrameTime() * self.SmoothIntensity * 0.5
@@ -713,10 +713,24 @@ function ENT:OnVolumeUpdate(intensity)
         local min, max = self:GetRenderBounds()
         local size = max - min
         local maxDimension = math.max(size.x, size.y, size.z)
-        local scale = 200 / maxDimension
+
+		local sMod = self.HeightIntensity or 1
+		-- print("sMod: ",sMod)
+
+		local sTemp = self.SmoothTempo or 1
+        -- print("sTemp: ",sTemp)
+
+        local sFFT = 0.5 + (self.fft_scale or 0)
+        -- print("sFFT: ",sFFT)
+
+        local scale = (200 / maxDimension) * sMod * sTemp * sFFT
+		-- print("scale: ",scale)
+
+		self.SmoothModelScale = Lerp(FrameTime() * 0.75,self.SmoothModelScale or 0,scale)
 
         local matrix = Matrix()
-        matrix:Scale(Vector(scale, scale, scale) * (0.5 + self.fft_scale))
+        --matrix:Scale(Vector(scale, scale, scale) * (0.5 + self.fft_scale))
+		matrix:Scale(Vector(self.SmoothModelScale, self.SmoothModelScale, self.SmoothModelScale))
         self:EnableMatrix("RenderMultiply", matrix)
 
         -- Apply color modulation
