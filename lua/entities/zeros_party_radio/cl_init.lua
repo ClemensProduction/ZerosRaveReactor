@@ -258,32 +258,37 @@ end
     Main think function - updates model scale and animations
 ]]
 function ENT:Think()
+    -- OPTIMIZATION: Cache frame time for reuse
+    local ft = FrameTime()
+
     -- Smooth beat scale back to normal
     if self.BeatScale and self.BeatScale > 1 then
-        self.BeatScale = Lerp(FrameTime() * 0.5, self.BeatScale, 1)
+        self.BeatScale = Lerp(ft * 0.5, self.BeatScale, 1)
     end
 
     if self:IsRadioPlaying() then
         -- Apply beat scale with smoothing
         local targetScale = self.ModelScale * (self.BeatScale or 1)
-        self.SmoothScale = Lerp(FrameTime() * 4, self.SmoothScale or 0, targetScale)
+        self.SmoothScale = Lerp(ft * 4, self.SmoothScale or 0, targetScale)
         self:SetModelScale(self.SmoothScale, 0)
     else
         -- Reset to base scale when not playing
         self:SetModelScale(self.ModelScale, 0)
     end
 
-	self.SmoothIntensity = Lerp(FrameTime() * 0.5,self.SmoothIntensity or 0,self.VisualIntensity)
-	self.SmoothVocalEnergyIntensity = Lerp(FrameTime() * 0.5,self.SmoothVocalEnergyIntensity or 0,(self.VocalEnergySmooth or 0) * 10)
-	self.SmoothTempo = Lerp(FrameTime() * 0.5,self.SmoothTempo or 0,self.fft_tempo_avg or 0)
+    -- OPTIMIZATION: Batch lerp calculations
+	self.SmoothIntensity = Lerp(ft * 0.5, self.SmoothIntensity or 0, self.VisualIntensity)
+	self.SmoothVocalEnergyIntensity = Lerp(ft * 0.5, self.SmoothVocalEnergyIntensity or 0, (self.VocalEnergySmooth or 0) * 10)
+	self.SmoothTempo = Lerp(ft * 0.5, self.SmoothTempo or 0, self.fft_tempo_avg or 0)
 
+    -- OPTIMIZATION: Only calculate party effects if conditions are met
 	if self.VocalEnergySmooth and self.VocalEnergySmooth > 0 and self.VisualIntensity > 0.1 and self.CurrentTransitionState == "building" then
+		self.HeightIntensity = Lerp(ft * 0.5, self.HeightIntensity or 0, (self.SmoothIntensity * 1) + (self.VocalEnergySmooth * 1))
 
-		--self.HeightIntensity = Lerp(FrameTime() * 0.5,self.HeightIntensity or 0,self.SmoothVocalEnergyIntensity > 0.5 and 2 or 0)
-		self.HeightIntensity = Lerp(FrameTime() * 0.5,self.HeightIntensity or 0,(self.SmoothIntensity * 1) + (self.VocalEnergySmooth * 1))
-
-		local sin = math.sin(CurTime())
-		local cos = math.cos(CurTime())
+        -- OPTIMIZATION: Cache trig values
+		local curTime = CurTime()
+		local sin = math.sin(curTime)
+		local cos = math.cos(curTime)
 
 		local intensity = self.SmoothIntensity
 		local vocal = self.SmoothVocalEnergyIntensity
@@ -292,23 +297,21 @@ function ENT:Think()
 		local SinRad = math.abs(200 * sin)
 		local AnimRad = 500 * intensity
 
-		local radius = math.Clamp(BaseRad + SinRad + AnimRad,BaseRad,5000)
-
+		local radius = math.Clamp(BaseRad + SinRad + AnimRad, BaseRad, 5000)
 		local numParticles = 12
 
-		-- local height = (100 * vocal) + (math.abs(100 * cos) * self.HeightIntensity)
         local height = (100 * vocal) + (100 * cos) + (300 * self.HeightIntensity)
 		height = height * self.SmoothTempo
 
-		local center = self:LocalToWorld( Vector(0, 0,  radius + height) )
+		local center = self:LocalToWorld(Vector(0, 0, radius + height))
 		self.PartyCenter = center
 		self.PartyRadius = radius
 		self.PartyHeight = -height
 
-	    -- Trigger extra particles during intense moments
-	    if ( not self.NextBeat or CurTime() > self.NextBeat) then
-			self.NextBeat = CurTime() + 0.01
-	        self:CreateCircularParticles(center, "zld_speaker_beat01", radius, numParticles, -height, 0,-90)
+	    -- OPTIMIZATION: Rate-limit particle generation to every 10ms
+	    if not self.NextBeat or curTime > self.NextBeat then
+			self.NextBeat = curTime + 0.01
+	        self:CreateCircularParticles(center, "zld_speaker_beat01", radius, numParticles, -height, 0, -90)
 	    end
 	end
 
@@ -333,7 +336,7 @@ function ENT:DrawTranslucent()
 
 	local ply = LocalPlayer()
 
-    -- Calculate LOD based on distance
+    -- OPTIMIZATION: Calculate LOD based on distance
     local distance = self:GetListenerDistance()
     if distance > self.Config.Performance.LODDistance then
         self.LODLevel = 2 -- Low detail
@@ -343,11 +346,14 @@ function ENT:DrawTranslucent()
         self.LODLevel = 0 -- Full detail
     end
 
-    -- Update FFT analysis at configured rate
-    self.NextUpdateTime = CurTime() + self.Config.Performance.UpdateRate
-    self:AnalyzeFFT()
+    -- OPTIMIZATION: Only update FFT analysis at configured rate (not every frame!)
+    local curTime = CurTime()
+    if not self.NextUpdateTime or curTime >= self.NextUpdateTime then
+        self.NextUpdateTime = curTime + self.Config.Performance.UpdateRate
+        self:AnalyzeFFT()
+    end
 
-    -- Update view angle for 3D2D rendering
+    -- OPTIMIZATION: Cache view angle calculation
     self.LocalViewAng = Angle(90, ply:EyeAngles().y - 90, 90)
 
     -- Draw effects based on LOD

@@ -171,22 +171,29 @@ function PANEL:CreateLibraryControls()
             end
         end):SetIcon("icon16/add.png")
 
-        -- Only show remove option for custom songs and SuperAdmin
-        if not song.isDefault and LocalPlayer():IsSuperAdmin() then
+        -- Only show edit/remove options for SuperAdmin
+        if LocalPlayer():IsSuperAdmin() then
             menu:AddSpacer()
 
-            menu:AddOption("Remove from Library", function()
-                Derma_Query(
-                    "Are you sure you want to remove '" .. song.name .. "' from the library?\nThis will permanently delete it!",
-                    "Confirm Removal",
-                    "Yes", function()
-                        net.Start("PartyRadio_RemoveFromLibrary")
-                        net.WriteString(hash)
-                        net.SendToServer()
-                    end,
-                    "No"
-                )
-            end):SetIcon("icon16/delete.png")
+            menu:AddOption("Edit Song Details", function()
+                self:OpenEditSongDialog(hash, song)
+            end):SetIcon("icon16/pencil.png")
+
+            -- Only allow removing custom songs (not default ones)
+            if not song.isDefault then
+                menu:AddOption("Remove from Library", function()
+                    Derma_Query(
+                        "Are you sure you want to remove '" .. song.name .. "' from the library?\nThis will permanently delete it!",
+                        "Confirm Removal",
+                        "Yes", function()
+                            net.Start("PartyRadio_RemoveFromLibrary")
+                            net.WriteString(hash)
+                            net.SendToServer()
+                        end,
+                        "No"
+                    )
+                end):SetIcon("icon16/delete.png")
+            end
         end
 
         menu:Open()
@@ -441,6 +448,114 @@ function PANEL:SendAddToLibraryRequest(name, artist, genre, url)
 
     notification.AddLegacy("Song added to library and playlist!", NOTIFY_GENERIC, 3)
     surface.PlaySound("buttons/button14.wav")
+end
+
+function PANEL:OpenEditSongDialog(hash, song)
+    -- Create edit dialog
+    local frame = vgui.Create("DFrame")
+    frame:SetSize(400, 300)
+    frame:SetTitle("Edit Song: " .. song.name)
+    frame:Center()
+    frame:MakePopup()
+    frame:SetSizable(false)
+
+    local container = vgui.Create("DPanel", frame)
+    container:Dock(FILL)
+    container:DockMargin(10, 10, 10, 10)
+    container.Paint = function(s, w, h)
+        draw.RoundedBox(4, 0, 0, w, h, Color(40, 40, 40))
+    end
+
+    -- Name input
+    local nameLabel = vgui.Create("DLabel", container)
+    nameLabel:SetText("Song Name:")
+    nameLabel:SetTextColor(Color(255, 255, 255))
+    nameLabel:Dock(TOP)
+    nameLabel:DockMargin(5, 5, 5, 5)
+
+    local nameEntry = vgui.Create("DTextEntry", container)
+    nameEntry:Dock(TOP)
+    nameEntry:DockMargin(5, 0, 5, 10)
+    nameEntry:SetValue(song.name or "")
+
+    -- Artist input
+    local artistLabel = vgui.Create("DLabel", container)
+    artistLabel:SetText("Artist:")
+    artistLabel:SetTextColor(Color(255, 255, 255))
+    artistLabel:Dock(TOP)
+    artistLabel:DockMargin(5, 0, 5, 5)
+
+    local artistEntry = vgui.Create("DTextEntry", container)
+    artistEntry:Dock(TOP)
+    artistEntry:DockMargin(5, 0, 5, 10)
+    artistEntry:SetValue(song.artist or "")
+
+    -- Genre input
+    local genreLabel = vgui.Create("DLabel", container)
+    genreLabel:SetText("Genre:")
+    genreLabel:SetTextColor(Color(255, 255, 255))
+    genreLabel:Dock(TOP)
+    genreLabel:DockMargin(5, 0, 5, 5)
+
+    local genreEntry = vgui.Create("DTextEntry", container)
+    genreEntry:Dock(TOP)
+    genreEntry:DockMargin(5, 0, 5, 10)
+    genreEntry:SetValue(song.genre or "")
+
+    -- URL display (read-only)
+    local urlLabel = vgui.Create("DLabel", container)
+    urlLabel:SetText("URL (Read-only):")
+    urlLabel:SetTextColor(Color(180, 180, 180))
+    urlLabel:Dock(TOP)
+    urlLabel:DockMargin(5, 0, 5, 5)
+
+    local urlEntry = vgui.Create("DTextEntry", container)
+    urlEntry:Dock(TOP)
+    urlEntry:DockMargin(5, 0, 5, 10)
+    urlEntry:SetValue(song.url or "")
+    urlEntry:SetEditable(false)
+
+    -- Save button
+    local saveButton = vgui.Create("DButton", container)
+    saveButton:SetText("Save Changes")
+    saveButton:SetTall(30)
+    saveButton:Dock(TOP)
+    saveButton:DockMargin(5, 10, 5, 0)
+    saveButton.DoClick = function()
+        local newName = string.Trim(nameEntry:GetValue())
+        local newArtist = string.Trim(artistEntry:GetValue())
+        local newGenre = string.Trim(genreEntry:GetValue())
+
+        -- Validation
+        if newName == "" then
+            Derma_Message("Song name cannot be empty!", "Error", "OK")
+            return
+        end
+
+        -- Send edit request to server
+        net.Start("PartyRadio_EditSong")
+        net.WriteString(hash)
+        net.WriteTable({
+            name = newName,
+            artist = newArtist,
+            genre = newGenre
+        })
+        net.SendToServer()
+
+        frame:Close()
+        notification.AddLegacy("Song updated successfully!", NOTIFY_GENERIC, 3)
+        surface.PlaySound("buttons/button14.wav")
+    end
+
+    -- Cancel button
+    local cancelButton = vgui.Create("DButton", container)
+    cancelButton:SetText("Cancel")
+    cancelButton:SetTall(30)
+    cancelButton:Dock(TOP)
+    cancelButton:DockMargin(5, 5, 5, 0)
+    cancelButton.DoClick = function()
+        frame:Close()
+    end
 end
 
 function PANEL:CreateSettingsControls()

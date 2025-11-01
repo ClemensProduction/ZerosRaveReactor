@@ -169,6 +169,49 @@ function ZerosRaveReactor.UpdateSongDuration(hash, duration)
 	return true, song.duration
 end
 
+-- Edit a song in the library (SuperAdmin only)
+function ZerosRaveReactor.EditSongInLibrary(hash, data, ply)
+    local hashStr = tostring(hash)
+
+    -- Check if song exists
+    if not ZerosRaveReactor.SongLibrary[hashStr] then
+        return false, "Song not found in library"
+    end
+
+    -- Check if player is SuperAdmin
+    if IsValid(ply) and not ply:IsSuperAdmin() then
+        return false, "Only SuperAdmins can edit songs in library"
+    end
+
+    local song = ZerosRaveReactor.SongLibrary[hashStr]
+
+    -- Validate and sanitize input
+    if data.name then
+        local name = tostring(data.name or "")
+        if name == "" or #name > 100 then
+            return false, "Invalid song name"
+        end
+        song.name = string.sub(name, 1, 100)
+    end
+
+    if data.artist then
+        song.artist = string.sub(tostring(data.artist or "Unknown"), 1, 100)
+    end
+
+    if data.genre then
+        song.genre = string.sub(tostring(data.genre or "Unknown"), 1, 50)
+    end
+
+    -- Save immediately
+    ZerosRaveReactor.SaveSongLibrary()
+
+    -- Broadcast update to all clients
+    ZerosRaveReactor.BroadcastLibraryUpdate()
+
+    print("[Party Radio] Edited song in library: " .. song.name)
+    return true
+end
+
 -- Remove a song from the library (SuperAdmin only, custom songs only)
 function ZerosRaveReactor.RemoveSongFromLibrary(hash, ply)
     local hashStr = tostring(hash)
