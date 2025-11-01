@@ -226,6 +226,17 @@ function ENT:AnalyzeFFT()
         self.fft_tempo_avg = 1
     end
 
+    -- Calculate normalized tempo (0 = no tempo/very slow, 1 = very fast)
+    -- Fast songs: ~0.3-0.5s between beats (120-200 BPM)
+    -- Slow songs: ~1.0-2.0s between beats (30-60 BPM)
+    -- We invert the interval and clamp to 0-1 range
+    local minInterval = 0.3  -- Very fast (200 BPM)
+    local maxInterval = 2.0  -- Very slow (30 BPM)
+
+    -- Invert and normalize: smaller interval = higher tempo value
+    local normalizedTempo = 1 - math.Clamp((self.fft_tempo_avg - minInterval) / (maxInterval - minInterval), 0, 1)
+    self.TempoNormalized = normalizedTempo
+
     -- Skip beat detection and visuals during calibration phase
     -- This allows the system to learn the song's characteristics first
     if CurTime() < self.CalibrationEndTime then return end

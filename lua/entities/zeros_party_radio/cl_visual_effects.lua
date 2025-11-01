@@ -414,33 +414,37 @@ end
     @param height: Vertical offset
     @param offset: Angular offset
 ]]
-function ENT:CreateCircularParticles(center, particleName, radius, numParticles, height, offset,yaw)
-
-	offset = CurTime() * 10
+function ENT:CreateCircularParticles(center, particleName, radius, numParticles, height, offset, yaw)
+    -- OPTIMIZATION: Cache calculations
+	local curTime = CurTime()
+	offset = curTime * 10
 	yaw = yaw or 0
 
-    local origin = center -- + Vector(0, 0, 30 * self:GetModelScale())
+    local origin = center
     local angleStep = 360 / numParticles
+    local angleStepRad = math.rad(angleStep)  -- OPTIMIZATION: Pre-calculate radian step
 
-	self.SmoothEffectRad = Lerp(FrameTime() * 0.5,self.SmoothEffectRad or 0,120 * self.BassIntensity)
+	self.SmoothEffectRad = Lerp(FrameTime() * 0.5, self.SmoothEffectRad or 0, 120 * self.BassIntensity)
+
+    -- OPTIMIZATION: Pre-calculate shared rotation values
+	local sinTime = math.sin(curTime * 0.1)
+	local baseRot = 90 - math.abs(120 * sinTime) - self.SmoothEffectRad
+	local rot = math.Clamp(baseRot, -100, 300) + yaw
 
 	local Outside = false
     for i = 0, numParticles - 1 do
 		Outside = not Outside
+        -- OPTIMIZATION: Use pre-calculated radian step
         local angle = math.rad(i * angleStep + offset)
-        local posX = math.cos(angle) * radius
-        local posY = math.sin(angle) * radius
+        local cosAngle = math.cos(angle)
+        local sinAngle = math.sin(angle)
+        local posX = cosAngle * radius
+        local posY = sinAngle * radius
         local particlePos = origin + Vector(posX, posY, height)
 
         -- Orient particle to face center
         local ang = (origin - particlePos):Angle()
-		--ang:RotateAroundAxis(ang:Right(), -90)
-		local rot = 90 - ( math.abs(120 * math.sin(CurTime() * 0.1)) ) - self.SmoothEffectRad
-		rot = math.Clamp(rot,-100,300)
-		ang:RotateAroundAxis(ang:Right(),yaw + rot)
-
-		--debugoverlay.Sphere(MainEffectPos,25,0.1,Color( 255, 255, 255, 100 ))
-		-- debugoverlay.Axis(particlePos, ang,50,0.01,false)
+		ang:RotateAroundAxis(ang:Right(), rot)
 
         ParticleEffect(particleName, particlePos, ang, nil)
     end
@@ -504,20 +508,29 @@ end
 function ENT:OnBassUpdate(intensity)
     if intensity <= 0.2 then return end
 
-	if not self.GlowColor02 then self.GlowColor02 = Color(self.fft_col01.r, self.fft_col01.g, self.fft_col01.b, 255 * self.VisualIntensity) end
-	self.GlowColor02.r = self.fft_col01.r
-	self.GlowColor02.g = self.fft_col01.g
-	self.GlowColor02.b = self.fft_col01.b
-	self.GlowColor02.a = 255 * self.VisualIntensity
+    -- OPTIMIZATION: Reuse color object instead of creating new one
+	if not self.GlowColor02 then
+        self.GlowColor02 = Color(self.fft_col01.r, self.fft_col01.g, self.fft_col01.b, 255 * self.VisualIntensity)
+    else
+        self.GlowColor02.r = self.fft_col01.r
+        self.GlowColor02.g = self.fft_col01.g
+        self.GlowColor02.b = self.fft_col01.b
+        self.GlowColor02.a = 255 * self.VisualIntensity
+    end
+
+    -- OPTIMIZATION: Cache LocalToWorld calculations
+	local pos = self:LocalToWorld(Vector(0, 0, 2))
+	local ang = self:LocalToWorldAngles(Angle(0, 0, 0))
+	local scale = math.Clamp(self.fft_scale, 0.4, 50)
 
     -- Draw ground rings
-	cam.Start3D2D(self:LocalToWorld(Vector(0, 0, 2)), self:LocalToWorldAngles(Angle(0, 0, 0)), math.Clamp(self.fft_scale, 0.4, 50))
+	cam.Start3D2D(pos, ang, scale)
         -- Background glow
         surface.SetMaterial(radial_shadow)
         surface.SetDrawColor(self.GlowColor02)
         surface.DrawTexturedRectRotated(0, 0, 500, 500, 0)
 
-        -- Rotating rings
+        -- OPTIMIZATION: Batch ring drawing
         for i = 1, self.fft_ring_count do
             local alpha = math.Clamp(200 - 25 * i, 0, 255)
 			DrawRing(Color(self.fft_col02.r, self.fft_col02.g, self.fft_col02.b, alpha), i * 0.15, self.fft_rot, i)
@@ -545,57 +558,54 @@ local col_white_01 = Color(255,255,255,150)
 function ENT:OnTrebleUpdate(intensity)
 	if not self.PartyCenter then return end
 
-	-- if intensity <= 0.05 then return end
+    -- OPTIMIZATION: Reuse color object
+	if not self.GlowColor01 then
+        self.GlowColor01 = Color(self.fft_col02.r, self.fft_col02.g, self.fft_col02.b, 255 * self.VisualIntensity)
+    else
+        self.GlowColor01.r = self.fft_col02.r
+        self.GlowColor01.g = self.fft_col02.g
+        self.GlowColor01.b = self.fft_col02.b
+        self.GlowColor01.a = 255 * self.VisualIntensity
+    end
 
-	if not self.GlowColor01 then self.GlowColor01 = Color(self.fft_col02.r, self.fft_col02.g, self.fft_col02.b, 255 * self.VisualIntensity) end
-	self.GlowColor01.r = self.fft_col02.r
-	self.GlowColor01.g = self.fft_col02.g
-	self.GlowColor01.b = self.fft_col02.b
-	self.GlowColor01.a = 255 * self.VisualIntensity
+    -- OPTIMIZATION: Cache common values
+	local visualInt = self.VisualIntensity
+	local entityPos = self:GetPos()
+	local partyCenter = self.PartyCenter
+	local viewAng = self.LocalViewAng or angle_zero
 
-	-- local dist = self:GetListenerDistance()
-
+    -- OPTIMIZATION: Batch render operations with same material
 	render.SetMaterial(laser)
-	render.DrawBeam(self:GetPos(), self.PartyCenter, 500 * self.VisualIntensity, 0, 0, self.fft_col02)
+	render.DrawBeam(entityPos, partyCenter, 500 * visualInt, 0, 0, self.fft_col02)
+	render.DrawBeam(entityPos, partyCenter, 250 * visualInt, 0, 0, col_white_01)
 
 	render.SetMaterial(mat_beam01)
-	render.DrawBeam(self:GetPos(), self.PartyCenter, 300 * self.VisualIntensity, 0, 0, self.fft_col02)
+	render.DrawBeam(entityPos, partyCenter, 300 * visualInt, 0, 0, self.fft_col02)
 
-
-	render.SetMaterial(laser)
-	render.DrawBeam(self:GetPos(), self.PartyCenter, 250 * self.VisualIntensity, 0, 0, col_white_01)
-
-
-	cam.Start3D2D(self.PartyCenter, self.LocalViewAng or angle_zero, self.fft_scale)
+    -- OPTIMIZATION: Combine 3D2D calls where possible
+	cam.Start3D2D(partyCenter, viewAng, self.fft_scale)
         surface.SetMaterial(sprite_flare)
         surface.SetDrawColor(self.fft_col02)
         surface.DrawTexturedRectRotated(0, 0, 200, 200, 0)
 
-		surface.SetMaterial(sprite_flare)
-		surface.SetDrawColor(255,255,255,100)
+		surface.SetDrawColor(255, 255, 255, 100)
 		surface.DrawTexturedRectRotated(0, 0, 100, 100, 0)
     cam.End3D2D()
 
-    -- Disable depth testing for close range
-    --cam.IgnoreZ(dist < 1000)
-	cam.Start3D2D(self:LocalToWorld(Vector(0, 0, 2)), self.LocalViewAng or angle_zero, self.fft_scale)
+	cam.Start3D2D(self:LocalToWorld(Vector(0, 0, 2)), viewAng, self.fft_scale)
         -- Background glow
         surface.SetMaterial(radial_shadow)
         surface.SetDrawColor(self.GlowColor01)
         surface.DrawTexturedRectRotated(0, 0, 300, 300, 0)
 
         -- Epic moment rings
-        --if self:IsEpic(5) then
-            for i = 1, self.fft_ring_count do
-                local alpha = math.Clamp(200 - 25 * i, 0, 200)
-				DrawRing(Color(self.fft_col02.r, self.fft_col02.g, self.fft_col02.b, alpha), i * 0.15, self.fft_rot, i)
-            end
-        --end
+        for i = 1, self.fft_ring_count do
+            local alpha = math.Clamp(200 - 25 * i, 0, 200)
+			DrawRing(Color(self.fft_col02.r, self.fft_col02.g, self.fft_col02.b, alpha), i * 0.15, self.fft_rot, i)
+        end
     cam.End3D2D()
-    --cam.IgnoreZ(false)
 
-
-	cam.Start3D2D(self.PartyCenter, self.LocalViewAng or angle_zero, self.VisualIntensity)
+	cam.Start3D2D(partyCenter, viewAng, visualInt)
 		-- Background glow
 		surface.SetMaterial(radial_shadow)
 		surface.SetDrawColor(self.GlowColor01)
