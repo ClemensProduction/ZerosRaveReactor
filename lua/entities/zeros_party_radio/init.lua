@@ -57,7 +57,7 @@ function ENT:SpawnFunction(ply, tr, name)
 end
 
 function ENT:Initialize()
-    self:SetModel(util.IsValidModel("models/spg/gryffindor/lamp.mdl") and "models/spg/gryffindor/lamp.mdl" or "models/props_lab/citizenradio.mdl")
+    self:SetModel("models/spg/gryffindor/lamp.mdl")
     self:SetModelScale(2)
 
     self:PhysicsInit(SOLID_VPHYSICS)
@@ -83,7 +83,7 @@ function ENT:Initialize()
     self.IsPlaying = false
     self.Volume = 0.5
     self.Range = 2000
-    self.MaxPlaylistSize = 50 -- Security: Limit playlist size
+    self.MaxPlaylistSize = 500 -- Security: Limit playlist size
 end
 
 function ENT:Use(activator, caller)

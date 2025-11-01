@@ -130,7 +130,7 @@ local function DrawShader(ent, mat, col, offset)
     ent:DisableMatrix("RenderMultiply")
 
     -- Restore original model
-    ent:SetModel(util.IsValidModel("models/spg/gryffindor/lamp.mdl") and "models/spg/gryffindor/lamp.mdl" or "models/props_lab/citizenradio.mdl")
+    ent:SetModel("models/spg/gryffindor/lamp.mdl")
 end
 
 -- ============================================
@@ -636,7 +636,7 @@ function ENT:OnVolumeUpdate(intensity)
             local option = not self.HoloLastOption
 			local mdl = self.ModelList[math.random(#self.ModelList)]
 
-            self.HoloModel = util.IsValidModel(mdl) and mdl or "models/dog.mdl"
+            self.HoloModel = util.IsValidModel(mdl) and mdl or "models/prop/duck/duck.mdl"
             self.HoloLastOption = option
             self.HoloModelChange = CurTime() + 10
             self.EpicShaderTime = CurTime() + 10

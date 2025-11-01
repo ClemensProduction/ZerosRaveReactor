@@ -186,19 +186,3 @@ AddSong("WHO'S READY FOR TOMORROW", "IBDY & Rat Boy", "Soundtrack", "https://fil
 AddSong("The Bomb", "Pigeon John", "Soundtrack", "https://files.catbox.moe/w7gicn.mp3")
 AddSong("I Really Want to Stay at Your House", "Rosa Walton & Hallie Coggins", "Soundtrack", "https://files.catbox.moe/zzabsv.mp3")
 
-
-----------------------------------------
--- Dance Model Config
-----------------------------------------
-
-ENT.ModelList = {
-	"models/vedatys/orangutan.mdl",
-	"models/konnie/spg/basilisk.mdl",
-	"models/konnie/spg/deatheaterfemale.mdl",
-	"models/konnie/spg/demiguise.mdl",
-	"models/konnie/spg/femalesnatcher.mdl",
-	"models/konnie/spg/headgirl.mdl",
-	"models/konnie/spg/hungarian_horntail.mdl",
-	"models/konnie/spg/path2/deatheatermale.mdl",
-	"models/konnie/witcher3/trissalt.mdl",
-}

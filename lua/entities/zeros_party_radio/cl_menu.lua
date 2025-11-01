@@ -93,9 +93,9 @@ function PANEL:Init()
     self:CreateSettingsControls()
 
     -- Add tabs
-    self.TabPanel:AddSheet("Song Library", self.LibraryPanel, "icon16/database.png")
     self.TabPanel:AddSheet("Playlist", self.PlaylistPanel, "icon16/music.png")
-    self.TabPanel:AddSheet("Add Music", self.AddURLPanel, "icon16/add.png")
+    self.TabPanel:AddSheet("Song Library", self.LibraryPanel, "icon16/database.png")
+    self.TabPanel:AddSheet("Add Song", self.AddURLPanel, "icon16/add.png")
     self.TabPanel:AddSheet("Settings", self.SettingsPanel, "icon16/cog.png")
 
     -- Listen for library updates
@@ -136,10 +136,12 @@ function PANEL:CreateLibraryControls()
     self.LibraryView:Dock(FILL)
     self.LibraryView:DockMargin(5, 0, 5, 5)
     self.LibraryView:SetMultiSelect(false)
-    self.LibraryView:AddColumn("Type"):SetFixedWidth(50)
     self.LibraryView:AddColumn("Song")
     self.LibraryView:AddColumn("Artist")
     self.LibraryView:AddColumn("Genre"):SetFixedWidth(120)
+	self.LibraryView:AddColumn("Length"):SetFixedWidth(60)
+
+
 
     -- Double click to add to playlist
     self.LibraryView.DoDoubleClick = function(lst, index, pnl)
@@ -252,7 +254,6 @@ function PANEL:CreatePlaylistControls()
     self.PlaylistView:Dock(FILL)
     self.PlaylistView:DockMargin(5, 5, 5, 5)
     self.PlaylistView:SetMultiSelect(false)
-    self.PlaylistView:AddColumn("Type"):SetFixedWidth(50)
     self.PlaylistView:AddColumn("Song")
     self.PlaylistView:AddColumn("Artist")
     self.PlaylistView:AddColumn("Genre"):SetFixedWidth(120)
@@ -572,6 +573,9 @@ function PANEL:SetRadio(ent, playlist, isPlaying, volume)
     self:RefreshLibraryView()
 end
 
+local hoverColor = Color(255,255,255,25)
+local customColor = Color(117, 128, 158)
+local defaultColor = Color(124, 158, 117)
 function PANEL:RefreshPlaylistView()
     if not IsValid(self.PlaylistView) then return end
 
@@ -580,26 +584,37 @@ function PANEL:RefreshPlaylistView()
         if istable(song) then
             -- Determine song type
             local songType = "Custom"
-            local songColor = Color(100, 150, 255) -- Blue for custom
+            local songColor = customColor
 
             if song.hash then
                 local librarySong = ZerosRaveReactor.SongLibrary[song.hash]
                 if librarySong and librarySong.isDefault then
                     songType = "Default"
-                    songColor = Color(100, 255, 100) -- Green for default
+                    songColor = defaultColor
                 end
             end
 
             local line = self.PlaylistView:AddLine(
-                songType,
                 song.name or "Unknown",
                 song.artist or "Unknown",
                 song.genre or "Unknown",
 				ZerosRaveReactor.FileDuration[song.url] and string.FormattedTime( ZerosRaveReactor.FileDuration[song.url], "%02i:%02i" ) or "???"
             )
 
+			-- Color the type column
+			line.Paint = function(s,w,h)
+				draw.RoundedBox(0, 0,0, w, h,songColor)
+
+				surface.SetDrawColor(0,0,0,100)
+				surface.DrawLine(0,h-1,w * 10,h)
+
+				if s:IsHovered() then
+					draw.RoundedBox(0, 0,0, w, h,hoverColor)
+				end
+			end
+
             -- Color the type column
-            line:SetColumnColor(0, songColor)
+            -- line:SetColumnColor(0, songColor)
         end
     end
 end
@@ -642,20 +657,30 @@ function PANEL:RefreshLibraryView()
         end
 
         local songType = song.isDefault and "Default" or "Custom"
-        local songColor = song.isDefault and Color(100, 255, 100) or Color(100, 150, 255)
+        local songColor = song.isDefault and defaultColor or customColor
 
         local line = self.LibraryView:AddLine(
-            songType,
             song.name,
             song.artist,
-            song.genre
+            song.genre,
+			ZerosRaveReactor.FileDuration[song.url] and string.FormattedTime( ZerosRaveReactor.FileDuration[song.url], "%02i:%02i" ) or "???"
         )
 
         -- Store hash for reference
         line.Hash = hash
 
         -- Color the type column
-        line:SetColumnColor(0, songColor)
+		line.Paint = function(s,w,h)
+			draw.RoundedBox(0, 0,0, w, h,songColor)
+
+			surface.SetDrawColor(0,0,0,100)
+			surface.DrawLine(0,h-1,w * 10,h)
+
+			if s:IsHovered() then
+				draw.RoundedBox(0, 0,0, w, h,hoverColor)
+			end
+		end
+        -- line:SetColumnColor(0, songColor)
     end
 end
 

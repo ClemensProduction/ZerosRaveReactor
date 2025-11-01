@@ -154,14 +154,8 @@ ENT.DefaultSongs = ENT.DefaultSongs or {}
 ----------------------------------------
 
 ENT.ModelList = {
-	"models/vedatys/orangutan.mdl",
-	"models/konnie/spg/deatheaterfemale.mdl",
-	"models/konnie/spg/demiguise.mdl",
 	"models/konnie/spg/femalesnatcher.mdl",
 	"models/konnie/spg/headgirl.mdl",
-	"models/konnie/spg/hungarian_horntail.mdl",
-	"models/konnie/spg/path2/deatheatermale.mdl",
-	"models/konnie/witcher3/trissalt.mdl",
 }
 
 ----------------------------------------
